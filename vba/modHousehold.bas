@@ -53,6 +53,8 @@ Public Sub ApplyMode()
     End If
 
     modUtil.Sh(SH_HOUSEHOLD).Visible = IIf(couple, xlSheetVisible, xlSheetHidden)
+    ' Settling up between two people reads as nonsense when there is only one.
+    modUtil.Sh(SH_DASHBOARD).Range(NR_COUPLE_BLOCK).EntireRow.Hidden = Not couple
 
     ' The Dashboard "View" selector only offers a person split for couples.
     With modUtil.Sh(SH_DASHBOARD).Range("ReportView").Validation

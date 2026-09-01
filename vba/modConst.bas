@@ -70,6 +70,9 @@ Public Const NR_CONFIGURED As String = "Configured"
 Public Const NR_TRANSFER_DAYS As String = "TransferWindowDays"
 Public Const NR_DUPES As String = "SkipDuplicates"
 
+' The block of the Dashboard that only means anything to two people
+Public Const NR_COUPLE_BLOCK As String = "CoupleBlock"
+
 ' Settings values
 Public Const MODE_SINGLE As String = "Single"
 Public Const MODE_COUPLE As String = "Couple"

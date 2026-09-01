@@ -338,6 +338,14 @@ def build(today: Optional[date] = None) -> Workbook:
 
 # --- Dashboard --------------------------------------------------------------
 
+# Row positions the macros need to address as well: ApplyMode hides the couple
+# block in single mode, so the named range and the block have to be built from
+# the same arithmetic.
+DASH_GROUPS_HEAD = 16
+DASH_MERCHANTS_TOP = DASH_GROUPS_HEAD + len(data.SPENDING_GROUPS) + 2
+DASH_COUPLE_TOP = DASH_MERCHANTS_TOP + 13
+DASH_COUPLE_LAST = DASH_COUPLE_TOP + 10
+
 DASH_KPIS_LEFT = [
     ("Money in", 'SUMIFS(tblTxn[View Amount],tblTxn[Month],ReportMonth,tblTxn[Type],"Income")', MONEY),
     ("Money out", '-SUMIFS(tblTxn[View Amount],tblTxn[Month],ReportMonth,tblTxn[Type],"Expense")', MONEY),
@@ -398,12 +406,12 @@ def build_dashboard(wb: Workbook, opening_month: str):
                   "Use the button above to clear them.", NOTE_FONT, wrap=True)
     ws.merge_cells("H9:I13")
 
-    section(ws, 15, "B", "I", "Where the money went")
-    put(ws, "B16", "Group", BOLD)
-    put(ws, "C16", "This month", BOLD, align="right")
-    put(ws, "E16", "12-month average", BOLD, align="right")
+    section(ws, DASH_GROUPS_HEAD - 1, "B", "I", "Where the money went")
+    put(ws, f"B{DASH_GROUPS_HEAD}", "Group", BOLD)
+    put(ws, f"C{DASH_GROUPS_HEAD}", "This month", BOLD, align="right")
+    put(ws, f"E{DASH_GROUPS_HEAD}", "12-month average", BOLD, align="right")
     for offset, group in enumerate(data.SPENDING_GROUPS):
-        row = 17 + offset
+        row = DASH_GROUPS_HEAD + 1 + offset
         put(ws, f"B{row}", group, LABEL_FONT)
         put(ws, f"C{row}",
             f'=-SUMIFS(tblTxn[View Amount],tblTxn[Month],ReportMonth,'
@@ -413,13 +421,13 @@ def build_dashboard(wb: Workbook, opening_month: str):
             f'tblTxn[Month],">="&TEXT(EDATE(DATE(VALUE(LEFT(ReportMonth,4)),'
             f'VALUE(RIGHT(ReportMonth,2)),1),-11),"yyyy-mm"),tblTxn[Month],'
             f'"<="&ReportMonth)/12', fmt=MONEY, align="right")
-    last_group_row = 16 + len(data.SPENDING_GROUPS)
+    last_group_row = DASH_GROUPS_HEAD + len(data.SPENDING_GROUPS)
     ws.conditional_formatting.add(
-        f"C17:C{last_group_row}",
+        f"C{DASH_GROUPS_HEAD + 1}:C{last_group_row}",
         DataBarRule(start_type="num", start_value=0, end_type="max", color=RED),
     )
 
-    merchants_top = last_group_row + 2
+    merchants_top = DASH_MERCHANTS_TOP
     section(ws, merchants_top, "B", "I", "Biggest merchants this month")
     put(ws, f"B{merchants_top + 1}", "Merchant", BOLD)
     put(ws, f"C{merchants_top + 1}", "Spent", BOLD, align="right")
@@ -430,7 +438,7 @@ def build_dashboard(wb: Workbook, opening_month: str):
         NOTE_FONT, wrap=True)
     ws.merge_cells(f"E{merchants_top + 2}:I{merchants_top + 4}")
 
-    couple_top = merchants_top + 13
+    couple_top = DASH_COUPLE_TOP
     section(ws, couple_top, "B", "I", "Couple view (selected month)")
     put(ws, f"B{couple_top + 1}", "", BOLD)
     put(ws, f"C{couple_top + 1}", "=PersonA", BOLD, align="right")
@@ -1423,9 +1431,10 @@ def add_names(wb: Workbook):
     name(wb, "ButtonAnchor", f"{dash}!$B$3")
     name(wb, "TxnButtonAnchor", f"{quoted(SH_TXN)}!$B$3")
 
-    merchants_top = 16 + len(data.SPENDING_GROUPS) + 2
     name(wb, "TopMerchants",
-         f"{dash}!$B${merchants_top + 2}:$C${merchants_top + 11}")
+         f"{dash}!$B${DASH_MERCHANTS_TOP + 2}:$C${DASH_MERCHANTS_TOP + 11}")
+    name(wb, "CoupleBlock",
+         f"{dash}!$B${DASH_COUPLE_TOP}:$I${DASH_COUPLE_LAST}")
 
     name(wb, "MonthList", f"{engine}!$D$3:$D$38")
     name(wb, "ViewList", f"{engine}!$F$3:$F$5")
