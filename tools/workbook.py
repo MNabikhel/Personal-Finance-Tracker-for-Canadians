@@ -13,7 +13,8 @@ from typing import Iterable, List, Optional, Sequence
 
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, DoughnutChart, LineChart, Reference
-from openpyxl.formatting.rule import CellIsRule, ColorScaleRule, DataBarRule
+from openpyxl.formatting.rule import (CellIsRule, ColorScaleRule, DataBarRule,
+                                      FormulaRule)
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -528,13 +529,15 @@ def build_transactions(wb: Workbook, records: Sequence[sample.Txn]):
         CellIsRule(operator="greaterThan", formula=["0"],
                    font=Font(color="1B7F4B", bold=True)),
     )
+    # Tints the whole row, so it has to test the Category cell rather than the
+    # cell being formatted: a cellIs rule over these columns would only ever
+    # colour Category itself.
     category_letter = col_of("Category")
     ws.conditional_formatting.add(
         f"{first_letter}{header_row + 1}:{last_letter}{header_row + LEDGER_CAPACITY}",
-        CellIsRule(operator="equal",
-                   formula=[f'"Uncategorized"'],
-                   fill=PatternFill("solid", fgColor="FDE8E8"),
-                   stopIfTrue=False),
+        FormulaRule(formula=[f'${category_letter}{header_row + 1}="Uncategorized"'],
+                    fill=PatternFill("solid", fgColor="FDE8E8"),
+                    stopIfTrue=False),
     )
     ws.conditional_formatting.add(
         f"{category_letter}{header_row + 1}:{category_letter}{header_row + LEDGER_CAPACITY}",

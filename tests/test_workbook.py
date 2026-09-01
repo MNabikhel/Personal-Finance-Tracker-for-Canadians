@@ -251,6 +251,26 @@ class ShapeTests(unittest.TestCase):
         self.assertEqual(templates, {header: workbook.formula_r1c1(header)
                                      for header in workbook.TXN_FORMULAS})
 
+    def test_a_row_needing_a_category_is_flagged_across_its_whole_width(self):
+        # A cellIs rule compares the cell being formatted, so spreading one
+        # across the ledger only ever colours Category itself - which looks
+        # right in the builder and does nothing on the sheet.
+        ws = self.wb[workbook.SH_TXN]
+        category = workbook.col_of("Category")
+        first = workbook.col_of(workbook.TXN_HEADERS[0])
+        last = workbook.col_of(workbook.TXN_HEADERS[-1])
+
+        for ranges, rules in ws.conditional_formatting._cf_rules.items():
+            if str(ranges.sqref).startswith(f"{first}") and last in str(ranges.sqref):
+                for rule in rules:
+                    if rule.type == "expression":
+                        self.assertEqual(
+                            rule.formula,
+                            [f'${category}{workbook.TXN_FIRST_ROW + 1}'
+                             f'="Uncategorized"'])
+                        return
+        self.fail("no whole-row rule for uncategorised transactions")
+
     def test_the_sample_data_is_actually_in_the_ledger(self):
         ws = self.wb[workbook.SH_TXN]
         first = workbook.TXN_FIRST_ROW + 1
