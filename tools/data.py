@@ -1,0 +1,833 @@
+"""Reference data for the Canadian personal finance tracker.
+
+Everything here ends up as an editable table in the workbook - nothing is
+hard-coded in the macros.
+"""
+
+from __future__ import annotations
+
+# ---------------------------------------------------------------------------
+# Categories: (category, group, type, essential, tax tag, monthly budget)
+# type is one of Income / Expense / Saving / Transfer.
+# ---------------------------------------------------------------------------
+
+CATEGORY_COLUMNS = [
+    "Category",
+    "Group",
+    "Type",
+    "Essential",
+    "Tax Tag",
+    "Monthly Budget",
+    "Default Owner",
+    "Joint Split A",
+    "Notes",
+]
+
+CATEGORIES = [
+    # Income
+    ("Employment Income", "Income", "Income", "Yes", "", 0, "Net pay after source deductions"),
+    ("Bonus & Commission", "Income", "Income", "No", "", 0, ""),
+    ("Self-Employment Income", "Income", "Income", "No", "Business income", 0, "T2125"),
+    ("EI Benefits", "Income", "Income", "Yes", "", 0, ""),
+    ("CPP / OAS", "Income", "Income", "Yes", "", 0, ""),
+    ("Canada Child Benefit", "Income", "Income", "Yes", "", 0, "Tax free"),
+    ("GST/HST Credit", "Income", "Income", "No", "", 0, "Tax free"),
+    ("Canada Carbon Rebate", "Income", "Income", "No", "", 0, "Where it still applies"),
+    ("Tax Refund (CRA)", "Income", "Income", "No", "", 0, ""),
+    ("Investment Income", "Income", "Income", "No", "Investment income", 0, "T5 / T3"),
+    ("Rental Income", "Income", "Income", "No", "Rental income", 0, "T776"),
+    ("Interest Earned", "Income", "Income", "No", "Investment income", 0, ""),
+    ("Gifts Received", "Income", "Income", "No", "", 0, ""),
+    ("Other Income", "Income", "Income", "No", "", 0, ""),
+    # Housing
+    ("Rent", "Housing", "Expense", "Yes", "", 0, ""),
+    ("Mortgage Payment", "Housing", "Expense", "Yes", "", 0, "Principal plus interest"),
+    ("Property Tax", "Housing", "Expense", "Yes", "", 0, ""),
+    ("Condo / Strata Fees", "Housing", "Expense", "Yes", "", 0, ""),
+    ("Home Insurance", "Housing", "Expense", "Yes", "", 0, ""),
+    ("Home Maintenance", "Housing", "Expense", "Yes", "", 0, ""),
+    ("Home Improvement", "Housing", "Expense", "No", "", 0, ""),
+    ("Furniture & Housewares", "Housing", "Expense", "No", "", 0, ""),
+    # Utilities
+    ("Electricity / Hydro", "Utilities", "Expense", "Yes", "", 0, ""),
+    ("Natural Gas / Heating", "Utilities", "Expense", "Yes", "", 0, ""),
+    ("Water & Sewer", "Utilities", "Expense", "Yes", "", 0, ""),
+    ("Internet", "Utilities", "Expense", "Yes", "", 0, ""),
+    ("Mobile Phone", "Utilities", "Expense", "Yes", "", 0, ""),
+    # Food
+    ("Groceries", "Food", "Expense", "Yes", "", 0, ""),
+    ("Restaurants & Takeout", "Food", "Expense", "No", "", 0, ""),
+    ("Coffee & Snacks", "Food", "Expense", "No", "", 0, ""),
+    ("Alcohol", "Food", "Expense", "No", "", 0, "LCBO, SAQ, BC Liquor, ANBL"),
+    ("Cannabis", "Food", "Expense", "No", "", 0, ""),
+    # Transportation
+    ("Fuel", "Transportation", "Expense", "Yes", "", 0, ""),
+    ("Auto Insurance", "Transportation", "Expense", "Yes", "", 0, ""),
+    ("Auto Maintenance", "Transportation", "Expense", "Yes", "", 0, ""),
+    ("Vehicle Payment", "Transportation", "Expense", "Yes", "", 0, "Loan or lease"),
+    ("Vehicle Registration", "Transportation", "Expense", "Yes", "", 0, ""),
+    ("Public Transit", "Transportation", "Expense", "Yes", "", 0, "Presto, Compass, OPUS"),
+    ("Taxi & Rideshare", "Transportation", "Expense", "No", "", 0, ""),
+    ("Parking & Tolls", "Transportation", "Expense", "No", "", 0, "407 ETR, city parking"),
+    # Health
+    ("Health Insurance", "Health", "Expense", "Yes", "Medical", 0, ""),
+    ("Dental", "Health", "Expense", "Yes", "Medical", 0, "Line 33099"),
+    ("Prescriptions & Pharmacy", "Health", "Expense", "Yes", "Medical", 0, "Line 33099"),
+    ("Vision", "Health", "Expense", "Yes", "Medical", 0, "Line 33099"),
+    ("Therapy & Counselling", "Health", "Expense", "Yes", "Medical", 0, "Line 33099"),
+    ("Other Medical", "Health", "Expense", "Yes", "Medical", 0, "Line 33099"),
+    ("Fitness & Sports", "Health", "Expense", "No", "", 0, ""),
+    # Family
+    ("Childcare & Daycare", "Family", "Expense", "Yes", "Childcare", 0, "Line 21400"),
+    ("Children's Activities", "Family", "Expense", "No", "", 0, ""),
+    ("Children's Clothing", "Family", "Expense", "Yes", "", 0, ""),
+    ("Baby Supplies", "Family", "Expense", "Yes", "", 0, ""),
+    ("Child / Spousal Support", "Family", "Expense", "Yes", "Support payments", 0, "Line 22000"),
+    ("Pet Care", "Family", "Expense", "No", "", 0, ""),
+    ("Elder Care", "Family", "Expense", "Yes", "Medical", 0, ""),
+    # Education
+    ("Tuition", "Education", "Expense", "No", "Tuition", 0, "T2202"),
+    ("Student Loan Payment", "Education", "Expense", "Yes", "Student loan interest", 0, "OSAP / CSLP"),
+    ("Books & Supplies", "Education", "Expense", "No", "", 0, ""),
+    ("Courses & Training", "Education", "Expense", "No", "", 0, ""),
+    ("Professional Dues", "Education", "Expense", "Yes", "Union or professional dues", 0, "Line 21200"),
+    # Personal & lifestyle
+    ("Clothing & Shoes", "Personal", "Expense", "No", "", 0, ""),
+    ("Personal Care", "Personal", "Expense", "No", "", 0, "Haircuts, cosmetics"),
+    ("Subscriptions", "Personal", "Expense", "No", "", 0, "Streaming, apps, news"),
+    ("Entertainment", "Personal", "Expense", "No", "", 0, ""),
+    ("Hobbies", "Personal", "Expense", "No", "", 0, ""),
+    ("Gifts & Celebrations", "Personal", "Expense", "No", "", 0, ""),
+    ("Donations", "Personal", "Expense", "No", "Donations", 0, "Line 34900"),
+    ("Electronics", "Personal", "Expense", "No", "", 0, ""),
+    # Travel
+    ("Flights", "Travel", "Expense", "No", "", 0, ""),
+    ("Accommodation", "Travel", "Expense", "No", "", 0, ""),
+    ("Travel Other", "Travel", "Expense", "No", "", 0, ""),
+    # Financial
+    ("Bank Fees", "Financial", "Expense", "Yes", "", 0, ""),
+    ("Interest & Card Charges", "Financial", "Expense", "Yes", "", 0, ""),
+    ("Foreign Exchange Fees", "Financial", "Expense", "No", "", 0, ""),
+    ("Life & Disability Insurance", "Financial", "Expense", "Yes", "", 0, ""),
+    ("Investment Fees", "Financial", "Expense", "No", "Investment expenses", 0, ""),
+    ("Tax Payment to CRA", "Financial", "Expense", "Yes", "Taxes paid", 0, ""),
+    ("Legal & Accounting", "Financial", "Expense", "No", "", 0, ""),
+    ("Debt Payment", "Financial", "Expense", "Yes", "", 0, "Loan or line of credit"),
+    # Saving and investing
+    ("RRSP Contribution", "Saving", "Saving", "Yes", "RRSP", 0, "Keep every receipt"),
+    ("TFSA Contribution", "Saving", "Saving", "Yes", "", 0, ""),
+    ("FHSA Contribution", "Saving", "Saving", "No", "FHSA", 0, "First Home Savings Account"),
+    ("RESP Contribution", "Saving", "Saving", "No", "", 0, "Attracts the CESG"),
+    ("Non-Registered Investing", "Saving", "Saving", "No", "", 0, ""),
+    ("Emergency Savings", "Saving", "Saving", "Yes", "", 0, ""),
+    # Transfers and catch-alls
+    ("Internal Transfer", "Transfers", "Transfer", "No", "", 0, "Between your own accounts"),
+    ("Credit Card Payment", "Transfers", "Transfer", "No", "", 0, "Not an expense on its own"),
+    ("Interac e-Transfer Sent", "Other", "Expense", "No", "", 0, "Re-categorise when you can"),
+    ("Interac e-Transfer Received", "Income", "Income", "No", "", 0, ""),
+    ("Cash Withdrawal", "Other", "Expense", "No", "", 0, "Where the cash went is unknown"),
+    ("Business Expense", "Other", "Expense", "No", "Business expense", 0, "T2125"),
+    ("Miscellaneous", "Other", "Expense", "No", "", 0, ""),
+    ("Uncategorized", "Other", "Expense", "No", "", 0, "Anything the rules could not place"),
+]
+
+GROUPS = [
+    "Income",
+    "Housing",
+    "Utilities",
+    "Food",
+    "Transportation",
+    "Health",
+    "Family",
+    "Education",
+    "Personal",
+    "Travel",
+    "Financial",
+    "Saving",
+    "Transfers",
+    "Other",
+]
+
+SPENDING_GROUPS = [group for group in GROUPS if group not in ("Income", "Transfers")]
+
+CATEGORY_TYPES = ["Income", "Expense", "Saving", "Transfer"]
+
+# ---------------------------------------------------------------------------
+# Whose money it is, by default, in couple mode.
+#
+# Whoever's card was tapped is not the same question as whose expense it is:
+# groceries put on one person's card are still the household's groceries.  These
+# categories therefore default to the Joint owner and get divided by the
+# household split, while everything else stays with the person who paid.  Each
+# category's "Default Owner" cell is editable, so this is only a starting point.
+#
+# Registered plans, medical costs, donations and tuition are deliberately left
+# personal: the CRA attributes them to one taxpayer.
+# ---------------------------------------------------------------------------
+
+JOINT_CATEGORIES = frozenset({
+    "Canada Child Benefit",
+    "Rent",
+    "Mortgage Payment",
+    "Property Tax",
+    "Condo / Strata Fees",
+    "Home Insurance",
+    "Home Maintenance",
+    "Home Improvement",
+    "Furniture & Housewares",
+    "Electricity / Hydro",
+    "Natural Gas / Heating",
+    "Water & Sewer",
+    "Internet",
+    "Groceries",
+    "Restaurants & Takeout",
+    "Fuel",
+    "Auto Insurance",
+    "Auto Maintenance",
+    "Vehicle Payment",
+    "Vehicle Registration",
+    "Parking & Tolls",
+    "Childcare & Daycare",
+    "Children's Activities",
+    "Children's Clothing",
+    "Baby Supplies",
+    "Pet Care",
+    "Entertainment",
+    "Flights",
+    "Accommodation",
+    "Travel Other",
+    "RESP Contribution",
+    "Emergency Savings",
+})
+
+
+def default_owner(category: str) -> str:
+    """"Joint" for shared household categories, blank for personal ones."""
+    return "Joint" if category in JOINT_CATEGORIES else ""
+
+# ---------------------------------------------------------------------------
+# Seed rules: (priority, look in, test, pattern, flow, category, notes)
+# Patterns are matched case-insensitively against the cleaned merchant name.
+# ---------------------------------------------------------------------------
+
+RULE_COLUMNS = [
+    "Priority",
+    "Enabled",
+    "Look In",
+    "Test",
+    "Pattern",
+    "Min Amount",
+    "Max Amount",
+    "Flow",
+    "Category",
+    "Set Owner",
+    "Hits",
+    "Notes",
+]
+
+RULE_FIELDS = ["Merchant", "Description", "Account", "Any"]
+RULE_TESTS = ["Contains", "Starts With", "Ends With", "Equals", "Like", "Word"]
+RULE_FLOWS = ["Any", "Money in", "Money out"]
+
+# Patterns short enough to hide inside an unrelated name.  "MOBIL" is a gas
+# station and also the tail of FREEDOM MOBILE; "MEC" is the outdoors co-op and
+# also the start of MECHANIC.  These are matched as whole words instead, which
+# is what a person reading the rule would have assumed anyway.
+_WHOLE_WORD_PATTERNS = frozenset({
+    "A&W", "ANBL", "ATCO", "ESSO", "FIDO", "GST", "HUSKY", "IGA", "MAXI",
+    "MEC", "METRO", "MOBIL", "OCS", "OPUS", "SAQ", "SHAW", "SHELL", "STM",
+    "SUPER C", "TTC",
+})
+
+_SEED_RULES = [
+    # A contribution to a registered plan is usually worded as a transfer
+    # ("TRANSFER TO RRSP ..."), so these have to be tried before the transfer
+    # rules below or the year's RRSP room would never be counted.
+    (9, "Description", "Contains", "RRSP", "Money out", "RRSP Contribution"),
+    (9, "Description", "Contains", "TFSA", "Money out", "TFSA Contribution"),
+    (9, "Description", "Contains", "FHSA", "Money out", "FHSA Contribution"),
+    (9, "Description", "Contains", "RESP", "Money out", "RESP Contribution"),
+    # Transfers and payments next - they must win over merchant matches.
+    (10, "Description", "Contains", "PAYMENT - THANK YOU", "Money in", "Credit Card Payment"),
+    (10, "Description", "Contains", "PAIEMENT", "Money in", "Credit Card Payment"),
+    (11, "Description", "Contains", "CREDIT CARD/LOC PAY", "Any", "Credit Card Payment"),
+    (12, "Description", "Contains", "TRANSFER TO", "Money out", "Internal Transfer"),
+    (12, "Description", "Contains", "TRANSFER FROM", "Money in", "Internal Transfer"),
+    (13, "Description", "Contains", "E-TRANSFER SENT", "Money out", "Interac e-Transfer Sent"),
+    (13, "Description", "Contains", "INTERAC E-TRANSFER SENT", "Money out", "Interac e-Transfer Sent"),
+    (13, "Description", "Contains", "E-TRANSFER RECEIVED", "Money in", "Interac e-Transfer Received"),
+    (14, "Description", "Contains", "ATM WITHDRAWAL", "Money out", "Cash Withdrawal"),
+    (14, "Description", "Contains", "CASH WITHDRAWAL", "Money out", "Cash Withdrawal"),
+    (14, "Description", "Contains", "ABM WITHDRAWAL", "Money out", "Cash Withdrawal"),
+    # Government and payroll deposits
+    (20, "Description", "Contains", "CANADA FED", "Money in", "Canada Child Benefit"),
+    (20, "Description", "Contains", "CANADA CCB", "Money in", "Canada Child Benefit"),
+    (21, "Description", "Contains", "GST", "Money in", "GST/HST Credit"),
+    (21, "Description", "Contains", "CANADA CARBON REBATE", "Money in", "Canada Carbon Rebate"),
+    (21, "Description", "Contains", "CLIMATE ACTION INCENTIVE", "Money in", "Canada Carbon Rebate"),
+    (22, "Description", "Contains", "CANADA REVENUE AGENCY", "Money in", "Tax Refund (CRA)"),
+    (22, "Description", "Contains", "CRA REFUND", "Money in", "Tax Refund (CRA)"),
+    (23, "Description", "Contains", "CANADA REVENUE AGENCY", "Money out", "Tax Payment to CRA"),
+    (24, "Description", "Contains", "EMPLOYMENT INSURANCE", "Money in", "EI Benefits"),
+    (24, "Description", "Contains", "CANADA EI", "Money in", "EI Benefits"),
+    (25, "Description", "Contains", "PAYROLL DEP", "Money in", "Employment Income"),
+    (25, "Description", "Contains", "PAY DEPOSIT", "Money in", "Employment Income"),
+    (25, "Description", "Contains", "DIRECT DEPOSIT", "Money in", "Employment Income"),
+    (25, "Description", "Contains", "PAYROLL", "Money in", "Employment Income"),
+    # Groceries
+    (40, "Merchant", "Contains", "LOBLAW", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "NO FRILLS", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "REAL CDN SUPERSTORE", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "REAL CANADIAN SUPERSTORE", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "METRO", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "SOBEYS", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "SAFEWAY", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "FOODLAND", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "IGA", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "PROVIGO", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "MAXI", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "SUPER C", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "FRESHCO", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "FARM BOY", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "WHOLE FOODS", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "T&T SUPERMARKET", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "SAVE ON FOODS", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "COSTCO WHOLESALE", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "WALMART", "Money out", "Groceries"),
+    (40, "Merchant", "Contains", "BULK BARN", "Money out", "Groceries"),
+    # Coffee, restaurants, alcohol
+    (45, "Merchant", "Contains", "TIM HORTONS", "Money out", "Coffee & Snacks"),
+    (45, "Merchant", "Contains", "STARBUCKS", "Money out", "Coffee & Snacks"),
+    (45, "Merchant", "Contains", "SECOND CUP", "Money out", "Coffee & Snacks"),
+    (45, "Merchant", "Contains", "COUNTRY STYLE", "Money out", "Coffee & Snacks"),
+    (46, "Merchant", "Contains", "MCDONALD", "Money out", "Restaurants & Takeout"),
+    (46, "Merchant", "Contains", "A&W", "Money out", "Restaurants & Takeout"),
+    (46, "Merchant", "Contains", "SUBWAY", "Money out", "Restaurants & Takeout"),
+    (46, "Merchant", "Contains", "HARVEY", "Money out", "Restaurants & Takeout"),
+    (46, "Merchant", "Contains", "SWISS CHALET", "Money out", "Restaurants & Takeout"),
+    (46, "Merchant", "Contains", "BOSTON PIZZA", "Money out", "Restaurants & Takeout"),
+    (46, "Merchant", "Contains", "PIZZA", "Money out", "Restaurants & Takeout"),
+    (46, "Merchant", "Contains", "SKIPTHEDISHES", "Money out", "Restaurants & Takeout"),
+    (46, "Merchant", "Contains", "UBER EATS", "Money out", "Restaurants & Takeout"),
+    (46, "Merchant", "Contains", "DOORDASH", "Money out", "Restaurants & Takeout"),
+    (46, "Merchant", "Contains", "RESTAURANT", "Money out", "Restaurants & Takeout"),
+    (46, "Merchant", "Contains", "SUSHI", "Money out", "Restaurants & Takeout"),
+    (46, "Merchant", "Contains", "CAFE", "Money out", "Restaurants & Takeout"),
+    (47, "Merchant", "Contains", "LCBO", "Money out", "Alcohol"),
+    (47, "Merchant", "Contains", "SAQ", "Money out", "Alcohol"),
+    (47, "Merchant", "Contains", "BC LIQUOR", "Money out", "Alcohol"),
+    (47, "Merchant", "Contains", "BEER STORE", "Money out", "Alcohol"),
+    (47, "Merchant", "Contains", "ANBL", "Money out", "Alcohol"),
+    (48, "Merchant", "Contains", "OCS", "Money out", "Cannabis"),
+    (48, "Merchant", "Contains", "CANNABIS", "Money out", "Cannabis"),
+    (48, "Merchant", "Contains", "TOKYO SMOKE", "Money out", "Cannabis"),
+    # Transport
+    (50, "Merchant", "Contains", "PETRO-CANADA", "Money out", "Fuel"),
+    (50, "Merchant", "Contains", "PETRO CANADA", "Money out", "Fuel"),
+    (50, "Merchant", "Contains", "ESSO", "Money out", "Fuel"),
+    (50, "Merchant", "Contains", "SHELL", "Money out", "Fuel"),
+    (50, "Merchant", "Contains", "HUSKY", "Money out", "Fuel"),
+    (50, "Merchant", "Contains", "ULTRAMAR", "Money out", "Fuel"),
+    (50, "Merchant", "Contains", "CHEVRON", "Money out", "Fuel"),
+    (50, "Merchant", "Contains", "PIONEER", "Money out", "Fuel"),
+    (50, "Merchant", "Contains", "MOBIL", "Money out", "Fuel"),
+    (51, "Merchant", "Contains", "PRESTO", "Money out", "Public Transit"),
+    (51, "Merchant", "Contains", "TTC", "Money out", "Public Transit"),
+    (51, "Merchant", "Contains", "GO TRANSIT", "Money out", "Public Transit"),
+    (51, "Merchant", "Contains", "TRANSLINK", "Money out", "Public Transit"),
+    (51, "Merchant", "Contains", "COMPASS CARD", "Money out", "Public Transit"),
+    (51, "Merchant", "Contains", "STM", "Money out", "Public Transit"),
+    (51, "Merchant", "Contains", "OPUS", "Money out", "Public Transit"),
+    (51, "Merchant", "Contains", "VIA RAIL", "Money out", "Public Transit"),
+    (52, "Merchant", "Contains", "UBER", "Money out", "Taxi & Rideshare"),
+    (52, "Merchant", "Contains", "LYFT", "Money out", "Taxi & Rideshare"),
+    (52, "Merchant", "Contains", "TAXI", "Money out", "Taxi & Rideshare"),
+    (53, "Merchant", "Contains", "407 ETR", "Money out", "Parking & Tolls"),
+    (53, "Merchant", "Contains", "GREEN P", "Money out", "Parking & Tolls"),
+    (53, "Merchant", "Contains", "IMPARK", "Money out", "Parking & Tolls"),
+    (53, "Merchant", "Contains", "PARKING", "Money out", "Parking & Tolls"),
+    (54, "Merchant", "Contains", "CANADIAN TIRE", "Money out", "Auto Maintenance"),
+    (54, "Merchant", "Contains", "MR LUBE", "Money out", "Auto Maintenance"),
+    (54, "Merchant", "Contains", "KAL TIRE", "Money out", "Auto Maintenance"),
+    (54, "Merchant", "Contains", "SERVICE ONTARIO", "Money out", "Vehicle Registration"),
+    (54, "Merchant", "Contains", "SAAQ", "Money out", "Vehicle Registration"),
+    (54, "Merchant", "Contains", "ICBC", "Money out", "Auto Insurance"),
+    (55, "Merchant", "Contains", "INTACT INSURANCE", "Money out", "Auto Insurance"),
+    (55, "Merchant", "Contains", "BELAIRDIRECT", "Money out", "Auto Insurance"),
+    (55, "Merchant", "Contains", "TD INSURANCE", "Money out", "Auto Insurance"),
+    (55, "Merchant", "Contains", "DESJARDINS INSURANCE", "Money out", "Auto Insurance"),
+    (55, "Merchant", "Contains", "SONNET", "Money out", "Auto Insurance"),
+    # Utilities and telecom
+    (60, "Merchant", "Contains", "HYDRO", "Money out", "Electricity / Hydro"),
+    (60, "Merchant", "Contains", "BC HYDRO", "Money out", "Electricity / Hydro"),
+    (60, "Merchant", "Contains", "EPCOR", "Money out", "Electricity / Hydro"),
+    (60, "Merchant", "Contains", "SASKPOWER", "Money out", "Electricity / Hydro"),
+    (60, "Merchant", "Contains", "NB POWER", "Money out", "Electricity / Hydro"),
+    (61, "Merchant", "Contains", "ENBRIDGE", "Money out", "Natural Gas / Heating"),
+    (61, "Merchant", "Contains", "FORTISBC", "Money out", "Natural Gas / Heating"),
+    (61, "Merchant", "Contains", "ATCO", "Money out", "Natural Gas / Heating"),
+    (61, "Merchant", "Contains", "ENERGIR", "Money out", "Natural Gas / Heating"),
+    (62, "Merchant", "Contains", "ROGERS", "Money out", "Internet"),
+    (62, "Merchant", "Contains", "BELL CANADA", "Money out", "Internet"),
+    (62, "Merchant", "Contains", "TELUS", "Money out", "Mobile Phone"),
+    (62, "Merchant", "Contains", "FREEDOM MOBILE", "Money out", "Mobile Phone"),
+    (62, "Merchant", "Contains", "FIDO", "Money out", "Mobile Phone"),
+    (62, "Merchant", "Contains", "KOODO", "Money out", "Mobile Phone"),
+    (62, "Merchant", "Contains", "VIRGIN PLUS", "Money out", "Mobile Phone"),
+    (62, "Merchant", "Contains", "PUBLIC MOBILE", "Money out", "Mobile Phone"),
+    (62, "Merchant", "Contains", "VIDEOTRON", "Money out", "Internet"),
+    (62, "Merchant", "Contains", "SHAW", "Money out", "Internet"),
+    (62, "Merchant", "Contains", "TEKSAVVY", "Money out", "Internet"),
+    # Health
+    (65, "Merchant", "Contains", "SHOPPERS DRUG MART", "Money out", "Prescriptions & Pharmacy"),
+    (65, "Merchant", "Contains", "REXALL", "Money out", "Prescriptions & Pharmacy"),
+    (65, "Merchant", "Contains", "PHARMAPRIX", "Money out", "Prescriptions & Pharmacy"),
+    (65, "Merchant", "Contains", "JEAN COUTU", "Money out", "Prescriptions & Pharmacy"),
+    (65, "Merchant", "Contains", "PHARMACY", "Money out", "Prescriptions & Pharmacy"),
+    (65, "Merchant", "Contains", "LONDON DRUGS", "Money out", "Prescriptions & Pharmacy"),
+    (66, "Merchant", "Contains", "DENTAL", "Money out", "Dental"),
+    (66, "Merchant", "Contains", "DENTISTRY", "Money out", "Dental"),
+    (66, "Merchant", "Contains", "PHYSIO", "Money out", "Other Medical"),
+    (66, "Merchant", "Contains", "MASSAGE", "Money out", "Other Medical"),
+    (66, "Merchant", "Contains", "OPTOMETRY", "Money out", "Vision"),
+    (66, "Merchant", "Contains", "LENSCRAFTERS", "Money out", "Vision"),
+    (67, "Merchant", "Contains", "GOODLIFE", "Money out", "Fitness & Sports"),
+    (67, "Merchant", "Contains", "FIT4LESS", "Money out", "Fitness & Sports"),
+    (67, "Merchant", "Contains", "ORANGETHEORY", "Money out", "Fitness & Sports"),
+    (67, "Merchant", "Contains", "YMCA", "Money out", "Fitness & Sports"),
+    # Subscriptions and shopping
+    (70, "Merchant", "Contains", "NETFLIX", "Money out", "Subscriptions"),
+    (70, "Merchant", "Contains", "SPOTIFY", "Money out", "Subscriptions"),
+    (70, "Merchant", "Contains", "CRAVE", "Money out", "Subscriptions"),
+    (70, "Merchant", "Contains", "DISNEY PLUS", "Money out", "Subscriptions"),
+    (70, "Merchant", "Contains", "APPLE.COM/BILL", "Money out", "Subscriptions"),
+    (70, "Merchant", "Contains", "GOOGLE STORAGE", "Money out", "Subscriptions"),
+    (70, "Merchant", "Contains", "AMAZON PRIME", "Money out", "Subscriptions"),
+    (70, "Merchant", "Contains", "GLOBE AND MAIL", "Money out", "Subscriptions"),
+    (71, "Merchant", "Contains", "AMAZON", "Money out", "Miscellaneous"),
+    (71, "Merchant", "Contains", "INDIGO", "Money out", "Hobbies"),
+    (71, "Merchant", "Contains", "CHAPTERS", "Money out", "Hobbies"),
+    (71, "Merchant", "Contains", "TOYS R US", "Money out", "Children's Activities"),
+    (71, "Merchant", "Contains", "WINNERS", "Money out", "Clothing & Shoes"),
+    (71, "Merchant", "Contains", "MARSHALLS", "Money out", "Clothing & Shoes"),
+    (71, "Merchant", "Contains", "SIMONS", "Money out", "Clothing & Shoes"),
+    (71, "Merchant", "Contains", "UNIQLO", "Money out", "Clothing & Shoes"),
+    (71, "Merchant", "Contains", "SPORT CHEK", "Money out", "Fitness & Sports"),
+    (71, "Merchant", "Contains", "MEC", "Money out", "Fitness & Sports"),
+    (71, "Merchant", "Contains", "HOME DEPOT", "Money out", "Home Improvement"),
+    (71, "Merchant", "Contains", "RONA", "Money out", "Home Improvement"),
+    (71, "Merchant", "Contains", "LOWE", "Money out", "Home Improvement"),
+    (71, "Merchant", "Contains", "IKEA", "Money out", "Furniture & Housewares"),
+    (71, "Merchant", "Contains", "DOLLARAMA", "Money out", "Miscellaneous"),
+    (71, "Merchant", "Contains", "PETSMART", "Money out", "Pet Care"),
+    (71, "Merchant", "Contains", "PET VALU", "Money out", "Pet Care"),
+    (71, "Merchant", "Contains", "VETERINARY", "Money out", "Pet Care"),
+    # Fees, savings, giving
+    (80, "Description", "Contains", "MONTHLY FEE", "Money out", "Bank Fees"),
+    (80, "Description", "Contains", "MONTHLY ACCOUNT FEE", "Money out", "Bank Fees"),
+    (80, "Description", "Contains", "OVERDRAFT", "Money out", "Bank Fees"),
+    (80, "Description", "Contains", "SERVICE CHARGE", "Money out", "Bank Fees"),
+    (80, "Description", "Contains", "INTEREST CHARGE", "Money out", "Interest & Card Charges"),
+    (80, "Description", "Contains", "FOREIGN CURRENCY", "Money out", "Foreign Exchange Fees"),
+    (80, "Merchant", "Contains", "SUN LIFE", "Money out", "Life & Disability Insurance"),
+    (80, "Merchant", "Contains", "MANULIFE", "Money out", "Life & Disability Insurance"),
+    (80, "Merchant", "Contains", "CANADA LIFE", "Money out", "Life & Disability Insurance"),
+    (81, "Merchant", "Contains", "WEALTHSIMPLE", "Money out", "Non-Registered Investing"),
+    (81, "Merchant", "Contains", "QUESTRADE", "Money out", "Non-Registered Investing"),
+    (82, "Merchant", "Contains", "RED CROSS", "Money out", "Donations"),
+    (82, "Merchant", "Contains", "UNITED WAY", "Money out", "Donations"),
+    (82, "Merchant", "Contains", "FOOD BANK", "Money out", "Donations"),
+    (82, "Description", "Contains", "DONATION", "Money out", "Donations"),
+    (83, "Description", "Contains", "DAYCARE", "Money out", "Childcare & Daycare"),
+    (83, "Description", "Contains", "CHILDCARE", "Money out", "Childcare & Daycare"),
+    (83, "Merchant", "Contains", "YOUR UNIVERSITY", "Money out", "Tuition"),
+    (84, "Description", "Contains", "MORTGAGE", "Money out", "Mortgage Payment"),
+    (84, "Description", "Contains", "RENT", "Money out", "Rent"),
+    (84, "Description", "Contains", "PROPERTY TAX", "Money out", "Property Tax"),
+    (84, "Description", "Contains", "OSAP", "Money out", "Student Loan Payment"),
+    (84, "Description", "Contains", "STUDENT LOAN", "Money out", "Student Loan Payment"),
+]
+
+
+def seed_rules():
+    """Expand the compact seed list into full rule rows."""
+    rows = []
+    for priority, look_in, test, pattern, flow, category in _SEED_RULES:
+        if test == "Contains" and pattern in _WHOLE_WORD_PATTERNS:
+            test = "Word"
+        rows.append(
+            [
+                priority,
+                "Yes",
+                look_in,
+                test,
+                pattern,
+                None,
+                None,
+                flow,
+                category,
+                "",
+                0,
+                "Built in",
+            ]
+        )
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# Bank export formats
+# ---------------------------------------------------------------------------
+
+FORMAT_COLUMNS = [
+    "Profile",
+    "Institution",
+    "Skip Rows",
+    "Delimiter",
+    "Date Col",
+    "Date Format",
+    "Description Cols",
+    "Amount Mode",
+    "Amount Col",
+    "Debit Col",
+    "Credit Col",
+    "Header Contains",
+    "Notes",
+]
+
+VERIFY = "Best-effort mapping - check the preview on first import and adjust."
+
+BANK_FORMATS = [
+    (
+        "RBC Chequing/Savings/Card",
+        "RBC Royal Bank",
+        1,
+        "Comma",
+        3,
+        "MM/DD/YYYY",
+        "5,6",
+        "Signed",
+        7,
+        None,
+        None,
+        "AccountType;TransactionDate;Description1",
+        "Download as CSV from Accounts > Download.",
+    ),
+    (
+        "TD (no header)",
+        "TD Canada Trust",
+        0,
+        "Comma",
+        1,
+        "MM/DD/YYYY",
+        "2",
+        "Debit/Credit",
+        None,
+        3,
+        4,
+        "",
+        "TD exports have no header row: date, description, withdrawal, deposit, balance.",
+    ),
+    (
+        "CIBC (no header)",
+        "CIBC",
+        0,
+        "Comma",
+        1,
+        "YYYY-MM-DD",
+        "2",
+        "Debit/Credit",
+        None,
+        3,
+        4,
+        "",
+        "CIBC exports have no header row: date, description, debit, credit, card.",
+    ),
+    (
+        "Simplii (no header)",
+        "Simplii Financial",
+        0,
+        "Comma",
+        1,
+        "YYYY-MM-DD",
+        "2",
+        "Debit/Credit",
+        None,
+        3,
+        4,
+        "",
+        "Same layout as CIBC.",
+    ),
+    (
+        "Scotiabank (no header)",
+        "Scotiabank",
+        0,
+        "Comma",
+        1,
+        "MM/DD/YYYY",
+        "3,4",
+        "Signed",
+        2,
+        None,
+        None,
+        "",
+        "Scotiabank exports date, amount, blank, description with no header. " + VERIFY,
+    ),
+    (
+        "BMO",
+        "BMO",
+        3,
+        "Comma",
+        3,
+        "YYYYMMDD",
+        "5",
+        "Signed",
+        4,
+        None,
+        None,
+        "FirstBankCard;TransactionType;DatePosted",
+        "BMO puts notice lines above the header; blank lines are ignored, and any header line that cannot be read as a date is skipped anyway.",
+    ),
+    (
+        "Tangerine",
+        "Tangerine",
+        1,
+        "Comma",
+        1,
+        "MM/DD/YYYY",
+        "3,4",
+        "Signed",
+        5,
+        None,
+        None,
+        "Date,Transaction,Name,Memo,Amount",
+        "",
+    ),
+    (
+        "EQ Bank",
+        "EQ Bank",
+        1,
+        "Comma",
+        1,
+        "YYYY-MM-DD",
+        "2",
+        "Signed",
+        3,
+        None,
+        None,
+        "Date,Description,Amount",
+        VERIFY,
+    ),
+    (
+        "Amex Canada",
+        "American Express",
+        1,
+        "Comma",
+        1,
+        "YYYY-MM-DD",
+        "2",
+        "Signed (flip)",
+        3,
+        None,
+        None,
+        "Date,Description,Amount,Extended Details",
+        "Amex writes purchases as positive numbers, so the sign is flipped.",
+    ),
+    (
+        "Desjardins",
+        "Desjardins",
+        0,
+        "Comma",
+        3,
+        "YYYY-MM-DD",
+        "5",
+        "Debit/Credit",
+        None,
+        6,
+        7,
+        "",
+        "Desjardins layouts vary by account. " + VERIFY,
+    ),
+    (
+        "National Bank",
+        "National Bank of Canada",
+        1,
+        "Comma",
+        1,
+        "YYYY-MM-DD",
+        "2",
+        "Debit/Credit",
+        None,
+        3,
+        4,
+        "",
+        VERIFY,
+    ),
+    (
+        "Wealthsimple Cash",
+        "Wealthsimple",
+        1,
+        "Comma",
+        1,
+        "YYYY-MM-DD",
+        "3",
+        "Signed",
+        2,
+        None,
+        None,
+        "date,amount,description",
+        VERIFY,
+    ),
+    (
+        "KOHO",
+        "KOHO",
+        1,
+        "Comma",
+        1,
+        "YYYY-MM-DD",
+        "2",
+        "Signed",
+        3,
+        None,
+        None,
+        "",
+        VERIFY,
+    ),
+    (
+        "PC Financial Mastercard",
+        "PC Financial",
+        1,
+        "Comma",
+        1,
+        "MM/DD/YYYY",
+        "2",
+        "Signed (flip)",
+        3,
+        None,
+        None,
+        "",
+        VERIFY,
+    ),
+    (
+        "Generic: date, description, amount",
+        "Any",
+        1,
+        "Comma",
+        1,
+        "AUTO",
+        "2",
+        "Signed",
+        3,
+        None,
+        None,
+        "",
+        "Fallback for exports with one signed amount column.",
+    ),
+    (
+        "Generic: date, description, debit, credit",
+        "Any",
+        1,
+        "Comma",
+        1,
+        "AUTO",
+        "2",
+        "Debit/Credit",
+        None,
+        3,
+        4,
+        "",
+        "Fallback for exports with separate debit and credit columns.",
+    ),
+    (
+        "Custom (edit me)",
+        "Your bank",
+        1,
+        "Comma",
+        1,
+        "AUTO",
+        "2",
+        "Signed",
+        3,
+        None,
+        None,
+        "",
+        "Copy the row above and change the column numbers to match your file.",
+    ),
+]
+
+DELIMITERS = ["Comma", "Semicolon", "Tab", "Pipe"]
+AMOUNT_MODES = ["Signed", "Signed (flip)", "Debit/Credit"]
+DATE_FORMATS = [
+    "AUTO",
+    "YYYY-MM-DD",
+    "MM/DD/YYYY",
+    "DD/MM/YYYY",
+    "YYYYMMDD",
+    "DD-MMM-YYYY",
+    "MMM-DD-YYYY",
+]
+
+ACCOUNT_TYPES = ["Chequing", "Savings", "Credit Card", "Line of Credit", "Loan", "Cash"]
+
+PROVINCES = [
+    ("AB", "Alberta"),
+    ("BC", "British Columbia"),
+    ("MB", "Manitoba"),
+    ("NB", "New Brunswick"),
+    ("NL", "Newfoundland and Labrador"),
+    ("NS", "Nova Scotia"),
+    ("NT", "Northwest Territories"),
+    ("NU", "Nunavut"),
+    ("ON", "Ontario"),
+    ("PE", "Prince Edward Island"),
+    ("QC", "Quebec"),
+    ("SK", "Saskatchewan"),
+    ("YT", "Yukon"),
+]
+
+# ---------------------------------------------------------------------------
+# Canada Revenue Agency reference numbers.  Source: canada.ca "MP, DB, RRSP,
+# DPSP, ALDA, TFSA limits, YMPE and the YAMPE", checked 2026-09.  Always
+# confirm your personal room in CRA My Account.
+# ---------------------------------------------------------------------------
+
+TFSA_LIMITS = [
+    (2009, 5000), (2010, 5000), (2011, 5000), (2012, 5000),
+    (2013, 5500), (2014, 5500), (2015, 10000), (2016, 5500),
+    (2017, 5500), (2018, 5500), (2019, 6000), (2020, 6000),
+    (2021, 6000), (2022, 6000), (2023, 6500), (2024, 7000),
+    (2025, 7000), (2026, 7000),
+]
+
+RRSP_LIMITS = [
+    (2020, 27230), (2021, 27830), (2022, 29210), (2023, 30780),
+    (2024, 31560), (2025, 32490), (2026, 33810), (2027, 35390),
+]
+
+PENSIONABLE_EARNINGS = [
+    (2024, 68500, 73200),
+    (2025, 71300, 81200),
+    (2026, 74600, 85000),
+]
+
+FHSA_ANNUAL_LIMIT = 8000
+FHSA_LIFETIME_LIMIT = 40000
+RESP_ANNUAL_GRANT_TARGET = 2500
+RESP_LIFETIME_LIMIT = 50000
+
+TAX_TAGS = [
+    ("Medical", "Line 33099 - medical expenses for self, spouse and minor children"),
+    ("Donations", "Line 34900 - charitable donations (official receipts only)"),
+    ("Childcare", "Line 21400 - child care expenses"),
+    ("Tuition", "Schedule 11 - tuition, education and textbook amounts (T2202)"),
+    ("Union or professional dues", "Line 21200 - annual dues"),
+    ("Student loan interest", "Line 31900 - interest on government student loans only"),
+    ("Support payments", "Line 22000 - deductible support payments"),
+    ("RRSP", "Schedule 7 - RRSP contributions"),
+    ("FHSA", "Schedule 15 - FHSA contributions"),
+    ("Business income", "T2125 - self-employment income"),
+    ("Business expense", "T2125 - self-employment expenses"),
+    ("Investment income", "Lines 12000/12100 - dividends and interest"),
+    ("Investment expenses", "Line 22100 - carrying charges and interest expense"),
+    ("Rental income", "T776 - rental income and expenses"),
+    ("Taxes paid", "Instalments and balance-due payments to the CRA"),
+]

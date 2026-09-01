@@ -1,0 +1,4 @@
+# Everything needed to build dist/Canadian-Finance-Tracker.xlsm.
+# The VBA project and the .xlsm container are written by tools/ using nothing
+# but the standard library, so this is the only build dependency.
+openpyxl>=3.1,<4
