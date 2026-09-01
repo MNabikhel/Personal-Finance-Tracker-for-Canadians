@@ -200,7 +200,7 @@ Public Function TitleCaseWords(ByVal text As String) As String
     For i = LBound(parts) To UBound(parts)
         word = parts(i)
         If Len(word) > 0 Then
-            If Len(word) <= 3 And IsAcronym(word) Then
+            If IsAcronym(word) Then
                 parts(i) = UCase$(word)
             Else
                 parts(i) = UCase$(Left$(word, 1)) & Mid$(word, 2)

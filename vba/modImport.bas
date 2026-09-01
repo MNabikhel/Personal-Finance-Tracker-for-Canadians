@@ -9,17 +9,6 @@ Option Explicit
 ' arriving is positive - regardless of how the bank chose to express it.
 '=============================================================================
 
-Public Type TxnRecord
-    TxnDate As Date
-    Description As String
-    Merchant As String
-    Amount As Double
-    Account As String
-    Owner As String
-    DupKey As String
-    SourceFile As String
-End Type
-
 Public Sub ImportStatements()
     Dim chosen As Variant
     Dim i As Long
@@ -80,12 +69,11 @@ Private Function ImportOneFile(ByVal path As String, ByVal batchId As String, _
                                ByRef totalSkipped As Long) As String
     Dim text As String
     Dim rows As Collection
-    Dim profileRow As Long
+    Dim profile As clsProfile
     Dim accountName As String
     Dim fileName As String
     Dim answer As VbMsgBoxResult
-    Dim records() As TxnRecord
-    Dim recordCount As Long
+    Dim records As Collection
     Dim readCount As Long, dupeCount As Long, badCount As Long
 
     fileName = FileNameOnly(path)
@@ -100,186 +88,128 @@ Private Function ImportOneFile(ByVal path As String, ByVal batchId As String, _
         MsgBox fileName & " has no data rows.", vbExclamation, APP_NAME
         Exit Function
     End If
-    profileRow = modProfiles.DetectProfile(rows)
+    Set profile = modProfiles.DetectProfile(rows)
 
     Do
-        If profileRow = 0 Then
-            profileRow = modProfiles.AskForProfile(fileName)
-            If profileRow = 0 Then Exit Function
+        If profile Is Nothing Then
+            Set profile = modProfiles.AskForProfile(fileName)
+            If profile Is Nothing Then Exit Function
         End If
 
-        Set rows = modParse.SplitRows(text, modProfiles.DelimiterOf(profileRow))
+        Set rows = modParse.SplitRows(text, profile.Delimiter())
         answer = MsgBox("Check the first rows of " & fileName & ":" & vbCrLf & vbCrLf & _
-                        modProfiles.PreviewText(rows, profileRow) & vbCrLf & _
+                        modProfiles.PreviewText(rows, profile) & vbCrLf & _
                         "Yes = import using this format" & vbCrLf & _
                         "No = pick a different format" & vbCrLf & _
                         "Cancel = skip this file", _
                         vbYesNoCancel + vbQuestion, APP_NAME)
         If answer = vbCancel Then Exit Function
         If answer = vbYes Then Exit Do
-        profileRow = 0
+        Set profile = Nothing
     Loop
 
-    accountName = modAccounts.ResolveAccount(fileName, profileRow)
+    accountName = modAccounts.ResolveAccount(fileName, profile)
     If Len(accountName) = 0 Then Exit Function
 
     modUtil.FastMode True
     modUtil.Status "reading " & fileName & " ..."
-    ParseRows rows, profileRow, accountName, fileName, records, recordCount, _
-              readCount, badCount
-
-    If recordCount > 0 Then
-        recordCount = DropDuplicates(records, recordCount, dupeCount)
-        If recordCount > 0 Then AppendRecords records, recordCount, batchId
-    End If
+    Set records = ReadRecords(rows, profile, accountName, fileName, readCount, badCount)
+    Set records = WithoutDuplicates(records, ExistingKeyCounts(), dupeCount)
+    If records.Count > 0 Then AppendRecords records, batchId
     modUtil.FastMode False
 
-    If recordCount = 0 And dupeCount = 0 Then
+    If records.Count = 0 And dupeCount = 0 Then
         MsgBox "No usable transactions were found in " & fileName & "." & vbCrLf & _
                "Check the Date/Amount column numbers for this format on the " & _
                "Bank Formats sheet.", vbExclamation, APP_NAME
         Exit Function
     End If
 
-    totalImported = totalImported + recordCount
+    totalImported = totalImported + records.Count
     totalSkipped = totalSkipped + dupeCount + badCount
 
-    modAccounts.LogBatch batchId, fileName, _
-                         modProfiles.ProfileValue(profileRow, PF_NAME), accountName, _
-                         readCount, recordCount, dupeCount, badCount
+    modAccounts.LogBatch batchId, fileName, profile.Name, accountName, _
+                         readCount, records.Count, dupeCount, badCount
 
-    ImportOneFile = fileName & ": " & recordCount & " added, " & dupeCount & _
+    ImportOneFile = fileName & ": " & records.Count & " added, " & dupeCount & _
                     " duplicate(s), " & badCount & " unreadable row(s)."
 End Function
 
-'--- Row level parsing ------------------------------------------------------
+'--- Reading ----------------------------------------------------------------
 
-Public Function BuildRecord(ByRef values() As String, ByVal profileRow As Long, _
-                            ByRef ok As Boolean) As TxnRecord
-    Dim record As TxnRecord
-    Dim dateOk As Boolean, amountOk As Boolean
-    Dim amount As Double, debit As Double, credit As Double
-    Dim mode As String
-
-    ok = False
-    record.TxnDate = modParse.ParseDate( _
-        modParse.FieldAt(values, modProfiles.ProfileNumber(profileRow, PF_DATE_COL, 1)), _
-        modProfiles.ProfileValue(profileRow, PF_DATE_FMT), dateOk)
-    If Not dateOk Then
-        BuildRecord = record
-        Exit Function
-    End If
-
-    record.Description = modParse.FieldsAt(values, _
-        modProfiles.ProfileValue(profileRow, PF_DESC_COLS))
-
-    mode = modProfiles.ProfileValue(profileRow, PF_AMOUNT_MODE)
-    If StrComp(mode, MODE_DEBIT_CREDIT, vbTextCompare) = 0 Then
-        debit = modParse.ParseAmount(modParse.FieldAt(values, _
-            modProfiles.ProfileNumber(profileRow, PF_DEBIT_COL, 0)), amountOk)
-        If Not amountOk Then debit = 0
-        credit = modParse.ParseAmount(modParse.FieldAt(values, _
-            modProfiles.ProfileNumber(profileRow, PF_CREDIT_COL, 0)), amountOk)
-        If Not amountOk Then credit = 0
-        amount = Abs(credit) - Abs(debit)
-        amountOk = (debit <> 0 Or credit <> 0)
-    Else
-        amount = modParse.ParseAmount(modParse.FieldAt(values, _
-            modProfiles.ProfileNumber(profileRow, PF_AMOUNT_COL, 0)), amountOk)
-        If StrComp(mode, MODE_SIGNED_FLIP, vbTextCompare) = 0 Then amount = -amount
-    End If
-
-    If Not amountOk Then
-        BuildRecord = record
-        Exit Function
-    End If
-
-    record.Amount = amount
-    record.Merchant = modRules.CleanMerchant(record.Description)
-    ok = True
-    BuildRecord = record
-End Function
-
-Private Sub ParseRows(ByVal rows As Collection, ByVal profileRow As Long, _
-                      ByVal accountName As String, ByVal fileName As String, _
-                      ByRef records() As TxnRecord, ByRef recordCount As Long, _
-                      ByRef readCount As Long, ByRef badCount As Long)
-    Dim values() As String
-    Dim record As TxnRecord
-    Dim ok As Boolean
-    Dim i As Long, skipRows As Long, capacity As Long
+' Every readable row of the file.  Header lines and bank notices do not parse
+' as a transaction and are counted as unreadable rather than stopping the
+' import: a BMO export, for one, opens with three lines of prose.
+Public Function ReadRecords(ByVal rows As Collection, ByVal profile As clsProfile, _
+                            ByVal accountName As String, ByVal fileName As String, _
+                            ByRef readCount As Long, ByRef badCount As Long) As Collection
+    Dim out As Collection
+    Dim txn As clsTxn
     Dim ownerName As String
+    Dim i As Long
 
-    skipRows = modProfiles.ProfileNumber(profileRow, PF_SKIP, 0)
+    Set out = New Collection
+    Set ReadRecords = out
     ownerName = modAccounts.OwnerOfAccount(accountName)
-    capacity = rows.Count
-    If capacity < 1 Then capacity = 1
-    ReDim records(1 To capacity)
-    recordCount = 0
 
-    For i = skipRows + 1 To rows.Count
-        values = rows.Item(i)
+    For i = profile.SkipRows + 1 To rows.Count
         readCount = readCount + 1
-        record = BuildRecord(values, profileRow, ok)
-        If ok Then
-            record.Account = accountName
-            record.Owner = ownerName
-            record.SourceFile = fileName
-            record.DupKey = modUtil.MatchKey(accountName, record.TxnDate, _
-                                             record.Amount, record.Description)
-            recordCount = recordCount + 1
-            records(recordCount) = record
-        Else
+        Set txn = profile.ReadRow(rows.Item(i))
+        If txn Is Nothing Then
             badCount = badCount + 1
+        Else
+            txn.Account = accountName
+            txn.Owner = ownerName
+            txn.SourceFile = fileName
+            out.Add txn
         End If
     Next i
-End Sub
+End Function
 
 '--- Duplicate handling -----------------------------------------------------
 
 ' Keeps only the rows that go beyond what the ledger already holds for a given
 ' key, so re-downloading an overlapping statement adds nothing while a genuine
 ' pair of identical same-day purchases still both land.
-Private Function DropDuplicates(ByRef records() As TxnRecord, ByVal count As Long, _
-                                ByRef dupeCount As Long) As Long
-    Dim existing As Collection, seen As Collection
-    Dim i As Long, kept As Long
+Public Function WithoutDuplicates(ByVal records As Collection, _
+                                  ByVal existing As Collection, _
+                                  ByRef dupeCount As Long) As Collection
+    Dim out As Collection
+    Dim seen As Collection
+    Dim i As Long
     Dim key As String
 
-    If StrComp(modUtil.NzStr(modUtil.Setting(NR_DUPES), "Yes"), "Yes", vbTextCompare) <> 0 Then
-        DropDuplicates = count
-        Exit Function
-    End If
-
-    Set existing = ExistingKeyCounts()
+    Set out = New Collection
+    Set WithoutDuplicates = out
     Set seen = New Collection
 
-    For i = 1 To count
-        key = records(i).DupKey
+    For i = 1 To records.Count
+        key = records.Item(i).MatchKey()
         modUtil.BumpVal seen, key
         If modUtil.GetVal(seen, key, 0) <= modUtil.GetVal(existing, key, 0) Then
             dupeCount = dupeCount + 1
         Else
-            kept = kept + 1
-            If kept <> i Then records(kept) = records(i)
+            out.Add records.Item(i)
         End If
     Next i
-
-    DropDuplicates = kept
 End Function
 
-Private Function ExistingKeyCounts() As Collection
+' How many times each match key already appears in the ledger.  Empty when the
+' user has turned duplicate skipping off, which lets everything through.
+Public Function ExistingKeyCounts() As Collection
     Dim lo As ListObject
     Dim keys As Variant
     Dim i As Long
     Dim counts As Collection
 
     Set counts = New Collection
+    Set ExistingKeyCounts = counts
+
+    If StrComp(modUtil.NzStr(modUtil.Setting(NR_DUPES), "Yes"), "Yes", _
+               vbTextCompare) <> 0 Then Exit Function
+
     Set lo = modUtil.TxnTable()
-    If modUtil.BodyRows(lo) = 0 Then
-        Set ExistingKeyCounts = counts
-        Exit Function
-    End If
+    If modUtil.BodyRows(lo) = 0 Then Exit Function
 
     keys = lo.ListColumns(COL_KEY).DataBodyRange.Value
     If Not IsArray(keys) Then
@@ -291,15 +221,14 @@ Private Function ExistingKeyCounts() As Collection
             End If
         Next i
     End If
-    Set ExistingKeyCounts = counts
 End Function
 
 '--- Writing to the ledger --------------------------------------------------
 
-Private Sub AppendRecords(ByRef records() As TxnRecord, ByVal count As Long, _
-                          ByVal batchId As String)
+Private Sub AppendRecords(ByVal records As Collection, ByVal batchId As String)
     Dim lo As ListObject
-    Dim firstRow As Long
+    Dim txn As clsTxn
+    Dim firstRow As Long, count As Long
     Dim i As Long
     Dim ids() As Variant, dates() As Variant, accounts() As Variant
     Dim owners() As Variant, descriptions() As Variant, merchants() As Variant
@@ -307,6 +236,7 @@ Private Sub AppendRecords(ByRef records() As TxnRecord, ByVal count As Long, _
     Dim batches() As Variant, keys() As Variant, tags() As Variant
     Dim nextId As Long
 
+    count = records.Count
     Set lo = modUtil.TxnTable()
     nextId = modUtil.BodyRows(lo) + 1
     firstRow = modLedger.AddRows(lo, count)
@@ -325,17 +255,18 @@ Private Sub AppendRecords(ByRef records() As TxnRecord, ByVal count As Long, _
     ReDim tags(1 To count, 1 To 1)
 
     For i = 1 To count
+        Set txn = records.Item(i)
         ids(i, 1) = "T" & Format$(nextId + i - 1, "000000")
-        dates(i, 1) = CDbl(records(i).TxnDate)
-        accounts(i, 1) = records(i).Account
-        owners(i, 1) = records(i).Owner
-        descriptions(i, 1) = records(i).Description
-        merchants(i, 1) = records(i).Merchant
-        amounts(i, 1) = records(i).Amount
+        dates(i, 1) = CDbl(txn.TxnDate)
+        accounts(i, 1) = txn.Account
+        owners(i, 1) = txn.Owner
+        descriptions(i, 1) = txn.Description
+        merchants(i, 1) = txn.Merchant
+        amounts(i, 1) = txn.Amount
         categories(i, 1) = CAT_UNCATEGORIZED
-        sources(i, 1) = records(i).SourceFile
+        sources(i, 1) = txn.SourceFile
         batches(i, 1) = batchId
-        keys(i, 1) = records(i).DupKey
+        keys(i, 1) = txn.MatchKey()
         tags(i, 1) = TAG_IMPORT
     Next i
 
@@ -355,9 +286,8 @@ End Sub
 
 Public Function FileNameOnly(ByVal path As String) As String
     Dim separatorAt As Long
-    separatorAt = InStrRev(path, Application.PathSeparator)
-    If separatorAt = 0 Then separatorAt = InStrRev(path, "\")
-    If separatorAt = 0 Then separatorAt = InStrRev(path, "/")
+    separatorAt = InStrRev(path, "\")
+    If InStrRev(path, "/") > separatorAt Then separatorAt = InStrRev(path, "/")
     If separatorAt = 0 Then
         FileNameOnly = path
     Else

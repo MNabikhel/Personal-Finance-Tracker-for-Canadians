@@ -4,6 +4,8 @@ Option Explicit
 '== Bank format profiles =====================================================
 ' Every row of the "Bank Formats" sheet describes how to read one institution's
 ' CSV export.  Users can edit a profile or add their own without touching code.
+' This module is the only place that reads that sheet; everything else works
+' with the clsProfile objects it hands out.
 '=============================================================================
 
 Public Const PF_NAME As String = "Profile"
@@ -38,52 +40,80 @@ Public Function ProfileNumber(ByVal rowIndex As Long, ByVal header As String, _
     If IsNumeric(text) Then ProfileNumber = CLng(Val(text)) Else ProfileNumber = fallback
 End Function
 
-Public Function ProfileNames() As Variant
-    Dim lo As ListObject, i As Long, names() As String
-    Set lo = ProfilesTable()
-    ReDim names(0 To modUtil.BodyRows(lo) - 1)
-    For i = 1 To modUtil.BodyRows(lo)
-        names(i - 1) = ProfileValue(i, PF_NAME) & " (" & ProfileValue(i, PF_INSTITUTION) & ")"
-    Next i
-    ProfileNames = names
+Public Function Profile(ByVal rowIndex As Long) As clsProfile
+    Dim out As clsProfile
+    Set out = New clsProfile
+    out.RowIndex = rowIndex
+    out.Name = ProfileValue(rowIndex, PF_NAME)
+    out.Institution = ProfileValue(rowIndex, PF_INSTITUTION)
+    out.SkipRows = ProfileNumber(rowIndex, PF_SKIP, 0)
+    out.DelimiterName = ProfileValue(rowIndex, PF_DELIM)
+    out.DateColumn = ProfileNumber(rowIndex, PF_DATE_COL, 1)
+    out.DateFormat = ProfileValue(rowIndex, PF_DATE_FMT)
+    out.DescriptionColumns = ProfileValue(rowIndex, PF_DESC_COLS)
+    out.AmountMode = ProfileValue(rowIndex, PF_AMOUNT_MODE)
+    out.AmountColumn = ProfileNumber(rowIndex, PF_AMOUNT_COL, 0)
+    out.DebitColumn = ProfileNumber(rowIndex, PF_DEBIT_COL, 0)
+    out.CreditColumn = ProfileNumber(rowIndex, PF_CREDIT_COL, 0)
+    out.Signature = ProfileValue(rowIndex, PF_SIGNATURE)
+    Set Profile = out
 End Function
 
-Public Function DelimiterOf(ByVal rowIndex As Long) As String
-    Select Case UCase$(ProfileValue(rowIndex, PF_DELIM))
-        Case "TAB": DelimiterOf = vbTab
-        Case "SEMICOLON": DelimiterOf = ";"
-        Case "PIPE": DelimiterOf = "|"
-        Case Else: DelimiterOf = ","
-    End Select
-End Function
-
-' Returns the profile row whose signature matches the first few lines of the
-' file, or 0 when nothing matches confidently.
-Public Function DetectProfile(ByVal rows As Collection) As Long
+Public Function AllProfiles() As Collection
     Dim lo As ListObject
-    Dim probe As String
-    Dim i As Long, best As Long, bestScore As Long, score As Long
+    Dim out As Collection
+    Dim i As Long
 
+    Set out = New Collection
+    Set AllProfiles = out
     Set lo = ProfilesTable()
+    For i = 1 To modUtil.BodyRows(lo)
+        If Len(ProfileValue(i, PF_NAME)) > 0 Then out.Add Profile(i)
+    Next i
+End Function
+
+Public Function ProfileTitles(ByVal profiles As Collection) As Variant
+    Dim names() As String
+    Dim i As Long
+
+    If profiles.Count = 0 Then Exit Function
+    ReDim names(0 To profiles.Count - 1)
+    For i = 1 To profiles.Count
+        names(i - 1) = profiles.Item(i).Title()
+    Next i
+    ProfileTitles = names
+End Function
+
+'--- Recognising a file -----------------------------------------------------
+
+' The profile whose signature matches the opening lines of the file, or
+' Nothing when none of them does confidently.
+Public Function MatchProfile(ByVal profiles As Collection, _
+                             ByVal rows As Collection) As clsProfile
+    Dim probe As String
+    Dim i As Long, bestScore As Long, score As Long
+
     probe = ProbeText(rows)
     If Len(probe) = 0 Then Exit Function
 
-    For i = 1 To modUtil.BodyRows(lo)
-        score = SignatureScore(ProfileValue(i, PF_SIGNATURE), probe)
+    For i = 1 To profiles.Count
+        score = SignatureScore(profiles.Item(i).Signature, probe)
         If score > bestScore Then
             bestScore = score
-            best = i
+            Set MatchProfile = profiles.Item(i)
         End If
     Next i
-    If bestScore > 0 Then DetectProfile = best
+End Function
+
+Public Function DetectProfile(ByVal rows As Collection) As clsProfile
+    Set DetectProfile = MatchProfile(AllProfiles(), rows)
 End Function
 
 Private Function ProbeText(ByVal rows As Collection) As String
-    Dim i As Long, values() As String, joined As String
+    Dim i As Long, joined As String
     For i = 1 To rows.Count
         If i > 4 Then Exit For
-        values = rows.Item(i)
-        joined = joined & Join(values, ",") & vbLf
+        joined = joined & modParse.JoinFields(rows.Item(i), ",") & vbLf
     Next i
     ProbeText = UCase$(Replace$(Replace$(joined, """", ""), " ", ""))
 End Function
@@ -107,31 +137,34 @@ Private Function SignatureScore(ByVal signature As String, ByVal probe As String
     SignatureScore = total
 End Function
 
-Public Function AskForProfile(ByVal fileName As String) As Long
+Public Function AskForProfile(ByVal fileName As String) As clsProfile
+    Dim profiles As Collection
     Dim choice As Long
-    choice = modUtil.AskChoice("Which format matches " & fileName & "?", ProfileNames())
-    AskForProfile = choice
+
+    Set profiles = AllProfiles()
+    If profiles.Count = 0 Then Exit Function
+    choice = modUtil.AskChoice("Which format matches " & fileName & "?", _
+                               ProfileTitles(profiles))
+    If choice > 0 Then Set AskForProfile = profiles.Item(choice)
 End Function
 
 ' Builds a human readable preview so the user can confirm the mapping before
 ' anything is written to the ledger.
-Public Function PreviewText(ByVal rows As Collection, ByVal profileRow As Long) As String
+Public Function PreviewText(ByVal rows As Collection, _
+                            ByVal profile As clsProfile) As String
     Dim i As Long, shown As Long
-    Dim values() As String
+    Dim txn As clsTxn
     Dim out As String
-    Dim record As TxnRecord
-    Dim ok As Boolean
 
-    out = "Format: " & ProfileValue(profileRow, PF_NAME) & vbCrLf & _
-          "Institution: " & ProfileValue(profileRow, PF_INSTITUTION) & vbCrLf & vbCrLf
-    For i = ProfileNumber(profileRow, PF_SKIP, 0) + 1 To rows.Count
-        values = rows.Item(i)
-        record = modImport.BuildRecord(values, profileRow, ok)
-        If ok Then
+    out = "Format: " & profile.Name & vbCrLf & _
+          "Institution: " & profile.Institution & vbCrLf & vbCrLf
+    For i = profile.SkipRows + 1 To rows.Count
+        Set txn = profile.ReadRow(rows.Item(i))
+        If Not txn Is Nothing Then
             shown = shown + 1
-            out = out & Format$(record.TxnDate, "yyyy-mm-dd") & "   " & _
-                  Format$(record.Amount, "#,##0.00;-#,##0.00") & "   " & _
-                  Left$(record.Description, 42) & vbCrLf
+            out = out & Format$(txn.TxnDate, "yyyy-mm-dd") & "   " & _
+                  Format$(txn.Amount, "#,##0.00;-#,##0.00") & "   " & _
+                  Left$(txn.Description, 42) & vbCrLf
             If shown >= 4 Then Exit For
         End If
     Next i

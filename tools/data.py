@@ -230,7 +230,14 @@ RULE_TESTS = ["Contains", "Starts With", "Ends With", "Equals", "Like"]
 RULE_FLOWS = ["Any", "Money in", "Money out"]
 
 _SEED_RULES = [
-    # Transfers and payments first - they must win over merchant matches.
+    # A contribution to a registered plan is usually worded as a transfer
+    # ("TRANSFER TO RRSP ..."), so these have to be tried before the transfer
+    # rules below or the year's RRSP room would never be counted.
+    (9, "Description", "Contains", "RRSP", "Money out", "RRSP Contribution"),
+    (9, "Description", "Contains", "TFSA", "Money out", "TFSA Contribution"),
+    (9, "Description", "Contains", "FHSA", "Money out", "FHSA Contribution"),
+    (9, "Description", "Contains", "RESP", "Money out", "RESP Contribution"),
+    # Transfers and payments next - they must win over merchant matches.
     (10, "Description", "Contains", "PAYMENT - THANK YOU", "Money in", "Credit Card Payment"),
     (10, "Description", "Contains", "PAIEMENT", "Money in", "Credit Card Payment"),
     (11, "Description", "Contains", "CREDIT CARD/LOC PAY", "Any", "Credit Card Payment"),
@@ -412,10 +419,9 @@ _SEED_RULES = [
     (80, "Description", "Contains", "SERVICE CHARGE", "Money out", "Bank Fees"),
     (80, "Description", "Contains", "INTEREST CHARGE", "Money out", "Interest & Card Charges"),
     (80, "Description", "Contains", "FOREIGN CURRENCY", "Money out", "Foreign Exchange Fees"),
-    (81, "Description", "Contains", "RRSP", "Money out", "RRSP Contribution"),
-    (81, "Description", "Contains", "TFSA", "Money out", "TFSA Contribution"),
-    (81, "Description", "Contains", "FHSA", "Money out", "FHSA Contribution"),
-    (81, "Description", "Contains", "RESP", "Money out", "RESP Contribution"),
+    (80, "Merchant", "Contains", "SUN LIFE", "Money out", "Life & Disability Insurance"),
+    (80, "Merchant", "Contains", "MANULIFE", "Money out", "Life & Disability Insurance"),
+    (80, "Merchant", "Contains", "CANADA LIFE", "Money out", "Life & Disability Insurance"),
     (81, "Merchant", "Contains", "WEALTHSIMPLE", "Money out", "Non-Registered Investing"),
     (81, "Merchant", "Contains", "QUESTRADE", "Money out", "Non-Registered Investing"),
     (82, "Merchant", "Contains", "RED CROSS", "Money out", "Donations"),

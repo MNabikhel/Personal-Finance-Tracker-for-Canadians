@@ -7,6 +7,7 @@ Option Explicit
 ' Rules sheet map it to a category.
 '=============================================================================
 
+' Column headers on the sheet.
 Public Const RL_PRIORITY As String = "Priority"
 Public Const RL_ENABLED As String = "Enabled"
 Public Const RL_FIELD As String = "Look In"
@@ -22,9 +23,6 @@ Public Const RL_NOTES As String = "Notes"
 
 Public Const CAT_NAME As String = "Category"
 Public Const CAT_OWNER As String = "Default Owner"
-
-' Maps a sorted rule position back to its row on the Rules sheet.
-Private mRuleRowMap() As Long
 
 Public Function RulesTable() As ListObject
     Set RulesTable = modUtil.Tbl(SH_RULES, TBL_RULES)
@@ -75,11 +73,11 @@ Private Function StripReferenceNumbers(ByVal text As String) As String
         word = words(i)
         If Len(word) = 0 Then
             ' skip
-        ElseIf word Like "#*" And Len(word) >= 4 And IsNumeric(Replace$(word, "#", "")) Then
+        ElseIf IsStoreNumber(word) Then
             ' store number such as "#1234"
         ElseIf IsNumeric(word) And Len(word) >= 4 Then
             ' reference number
-        ElseIf word Like "*[0-9][0-9][0-9][0-9][0-9]*" Then
+        ElseIf word Like "*#####*" Then
             ' embedded long digit run
         Else
             If Len(kept) > 0 Then kept = kept & " "
@@ -87,6 +85,14 @@ Private Function StripReferenceNumbers(ByVal text As String) As String
         End If
     Next i
     StripReferenceNumbers = kept
+End Function
+
+' "#1234", the store number a terminal appends.  Written out rather than as a
+' Like pattern because "#" is the digit wildcard, not a literal, in a pattern.
+Private Function IsStoreNumber(ByVal word As String) As Boolean
+    If Len(word) < 2 Then Exit Function
+    If Left$(word, 1) <> "#" Then Exit Function
+    IsStoreNumber = IsNumeric(Mid$(word, 2))
 End Function
 
 Private Function StripProvinceTail(ByVal text As String) As String
@@ -126,6 +132,23 @@ Private Function SubArray(ByRef source() As String, ByVal fromIndex As Long, _
     SubArray = out
 End Function
 
+'--- Matching --------------------------------------------------------------
+
+' The first rule that claims this transaction, or Nothing.  Rules are expected
+' in priority order; LoadRules puts them that way.
+Public Function FirstMatch(ByVal rules As Collection, ByVal merchant As String, _
+                           ByVal description As String, ByVal accountName As String, _
+                           ByVal amount As Double) As clsRule
+    Dim i As Long
+
+    For i = 1 To rules.Count
+        If rules.Item(i).Matches(merchant, description, accountName, amount) Then
+            Set FirstMatch = rules.Item(i)
+            Exit Function
+        End If
+    Next i
+End Function
+
 '--- Applying rules ---------------------------------------------------------
 
 Public Sub CategorizeUncategorized(Optional ByVal interactive As Boolean = True)
@@ -147,12 +170,10 @@ Private Sub ApplyRules(ByVal includeTagged As Boolean, ByVal interactive As Bool
     Dim rowCount As Long
     Dim merchants As Variant, descriptions As Variant, amounts As Variant
     Dim accounts As Variant, categories As Variant, tags As Variant, owners As Variant
-    Dim i As Long, matched As Long, ruleIndex As Long
-    Dim ruleCount As Long
-    Dim rulePattern() As String, ruleField() As String, ruleTest() As String
-    Dim ruleCategory() As String, ruleOwner() As String, ruleFlow() As String
-    Dim ruleMin() As Double, ruleMax() As Double
-    Dim ruleHits() As Long
+    Dim i As Long, matched As Long
+    Dim rules As Collection
+    Dim rule As clsRule
+    Dim hits As Collection
     Dim changed As Boolean
     Dim categoryOwners As Collection
     Dim couple As Boolean
@@ -166,14 +187,14 @@ Private Sub ApplyRules(ByVal includeTagged As Boolean, ByVal interactive As Bool
         Exit Sub
     End If
 
-    ruleCount = LoadRules(rulePattern, ruleField, ruleTest, ruleCategory, ruleOwner, _
-                          ruleFlow, ruleMin, ruleMax, ruleHits)
-    If ruleCount = 0 Then
+    Set rules = LoadRules()
+    If rules.Count = 0 Then
         If interactive Then
             MsgBox "There are no enabled rules on the Rules sheet.", vbInformation, APP_NAME
         End If
         Exit Sub
     End If
+    Set hits = New Collection
 
     couple = modUtil.IsCoupleMode()
     Set categoryOwners = CategoryOwners()
@@ -191,27 +212,25 @@ Private Sub ApplyRules(ByVal includeTagged As Boolean, ByVal interactive As Bool
         If Len(modUtil.NzStr(amounts(i, 1))) > 0 Then
             If Retaggable(modUtil.NzStr(categories(i, 1)), _
                           modUtil.NzStr(tags(i, 1)), includeTagged) Then
-                ruleIndex = FirstMatch(rulePattern, ruleField, ruleTest, ruleFlow, _
-                                       ruleMin, ruleMax, ruleCount, _
-                                       modUtil.NzStr(merchants(i, 1)), _
-                                       modUtil.NzStr(descriptions(i, 1)), _
-                                       modUtil.NzStr(accounts(i, 1)), _
-                                       modUtil.NzNum(amounts(i, 1)))
-                If ruleIndex > 0 Then
-                    categories(i, 1) = ruleCategory(ruleIndex)
+                Set rule = FirstMatch(rules, modUtil.NzStr(merchants(i, 1)), _
+                                      modUtil.NzStr(descriptions(i, 1)), _
+                                      modUtil.NzStr(accounts(i, 1)), _
+                                      modUtil.NzNum(amounts(i, 1)))
+                If Not rule Is Nothing Then
+                    categories(i, 1) = rule.Category
                     tags(i, 1) = TAG_RULE
                     ' Whose card was tapped is not the same question as whose
                     ' expense it is, so shared categories move to the Joint
                     ' owner unless the rule names someone specific.
                     If couple Then
-                        newOwner = ruleOwner(ruleIndex)
+                        newOwner = rule.SetOwner
                         If Len(newOwner) = 0 Then
                             newOwner = modUtil.NzStr(modUtil.GetVal(categoryOwners, _
-                                       UCase$(ruleCategory(ruleIndex)), ""))
+                                       UCase$(rule.Category), ""))
                         End If
                         If Len(newOwner) > 0 Then owners(i, 1) = newOwner
                     End If
-                    ruleHits(ruleIndex) = ruleHits(ruleIndex) + 1
+                    modUtil.BumpVal hits, CStr(rule.RowIndex)
                     matched = matched + 1
                     changed = True
                 End If
@@ -223,7 +242,7 @@ Private Sub ApplyRules(ByVal includeTagged As Boolean, ByVal interactive As Bool
         modLedger.WriteColumn lo, 1, rowCount, COL_CATEGORY, categories
         modLedger.WriteColumn lo, 1, rowCount, COL_TAGGEDBY, tags
         modLedger.WriteColumn lo, 1, rowCount, COL_OWNER, owners
-        SaveHits ruleHits, ruleCount
+        SaveHits hits
     End If
     modUtil.FastMode False
 
@@ -248,54 +267,67 @@ Private Function Retaggable(ByVal category As String, ByVal taggedBy As String, 
     End If
 End Function
 
-Private Function LoadRules(ByRef patterns() As String, ByRef fields() As String, _
-                           ByRef tests() As String, ByRef categories() As String, _
-                           ByRef owners() As String, ByRef flows() As String, _
-                           ByRef minimums() As Double, ByRef maximums() As Double, _
-                           ByRef hits() As Long) As Long
+' Every usable rule on the sheet, in the order they should be tried.
+Public Function LoadRules() As Collection
     Dim lo As ListObject
-    Dim rowCount As Long, i As Long, kept As Long
-    Dim order() As Long
-    Dim priorities() As Double
+    Dim loaded As Collection
+    Dim rule As clsRule
+    Dim i As Long
 
+    Set loaded = New Collection
     Set lo = RulesTable()
-    rowCount = modUtil.BodyRows(lo)
-    If rowCount = 0 Then Exit Function
 
-    ReDim patterns(1 To rowCount)
-    ReDim fields(1 To rowCount)
-    ReDim tests(1 To rowCount)
-    ReDim categories(1 To rowCount)
-    ReDim owners(1 To rowCount)
-    ReDim flows(1 To rowCount)
-    ReDim minimums(1 To rowCount)
-    ReDim maximums(1 To rowCount)
-    ReDim hits(1 To rowCount)
-    ReDim order(1 To rowCount)
-    ReDim priorities(1 To rowCount)
-
-    For i = 1 To rowCount
+    For i = 1 To modUtil.BodyRows(lo)
         If IsRuleUsable(lo, i) Then
-            kept = kept + 1
-            patterns(kept) = UCase$(RuleValue(lo, i, RL_PATTERN))
-            fields(kept) = RuleValue(lo, i, RL_FIELD)
-            tests(kept) = RuleValue(lo, i, RL_TEST)
-            categories(kept) = RuleValue(lo, i, RL_CATEGORY)
-            owners(kept) = RuleValue(lo, i, RL_OWNER)
-            flows(kept) = RuleValue(lo, i, RL_FLOW)
-            minimums(kept) = modUtil.NzNum(RuleValue(lo, i, RL_MIN), -1E+15)
-            maximums(kept) = modUtil.NzNum(RuleValue(lo, i, RL_MAX), 1E+15)
-            hits(kept) = 0
-            order(kept) = i
-            priorities(kept) = modUtil.NzNum(RuleValue(lo, i, RL_PRIORITY), 500)
+            Set rule = New clsRule
+            rule.RowIndex = i
+            rule.Priority = modUtil.NzNum(RuleValue(lo, i, RL_PRIORITY), 500)
+            rule.LookIn = RuleValue(lo, i, RL_FIELD)
+            rule.Test = RuleValue(lo, i, RL_TEST)
+            rule.Pattern = RuleValue(lo, i, RL_PATTERN)
+            rule.MinAmount = modUtil.NzNum(RuleValue(lo, i, RL_MIN), -1E+15)
+            rule.MaxAmount = modUtil.NzNum(RuleValue(lo, i, RL_MAX), 1E+15)
+            rule.Flow = RuleValue(lo, i, RL_FLOW)
+            rule.Category = RuleValue(lo, i, RL_CATEGORY)
+            rule.SetOwner = RuleValue(lo, i, RL_OWNER)
+            loaded.Add rule
         End If
     Next i
 
-    If kept = 0 Then Exit Function
-    SortRules patterns, fields, tests, categories, owners, flows, minimums, _
-              maximums, order, priorities, kept
-    mRuleRowMap = order
-    LoadRules = kept
+    Set LoadRules = ByPriority(loaded)
+End Function
+
+' Insertion sort; rule lists are short and this keeps rules of equal priority
+' in the order the user put them on the sheet.
+Public Function ByPriority(ByVal rules As Collection) As Collection
+    Dim ordered() As Object
+    Dim key As clsRule
+    Dim out As Collection
+    Dim i As Long, j As Long
+
+    Set out = New Collection
+    Set ByPriority = out
+    If rules.Count = 0 Then Exit Function
+
+    ReDim ordered(1 To rules.Count)
+    For i = 1 To rules.Count
+        Set ordered(i) = rules.Item(i)
+    Next i
+
+    For i = 2 To rules.Count
+        Set key = ordered(i)
+        j = i - 1
+        Do While j >= 1
+            If ordered(j).Priority <= key.Priority Then Exit Do
+            Set ordered(j + 1) = ordered(j)
+            j = j - 1
+        Loop
+        Set ordered(j + 1) = key
+    Next i
+
+    For i = 1 To rules.Count
+        out.Add ordered(i)
+    Next i
 End Function
 
 Private Function IsRuleUsable(ByVal lo As ListObject, ByVal rowIndex As Long) As Boolean
@@ -312,104 +344,19 @@ Private Function RuleValue(ByVal lo As ListObject, ByVal rowIndex As Long, _
                 modUtil.ColumnIndex(lo, header)).Value)
 End Function
 
-' Insertion sort by priority; rule lists are short and this keeps ties stable.
-Private Sub SortRules(ByRef patterns() As String, ByRef fields() As String, _
-                      ByRef tests() As String, ByRef categories() As String, _
-                      ByRef owners() As String, ByRef flows() As String, _
-                      ByRef minimums() As Double, ByRef maximums() As Double, _
-                      ByRef order() As Long, ByRef priorities() As Double, _
-                      ByVal count As Long)
-    Dim i As Long, j As Long
-    Dim keyPriority As Double
-    Dim keyPattern As String, keyField As String, keyTest As String
-    Dim keyCategory As String, keyOwner As String, keyFlow As String
-    Dim keyMin As Double, keyMax As Double
-    Dim keyOrder As Long
-
-    For i = 2 To count
-        keyPriority = priorities(i)
-        keyPattern = patterns(i): keyField = fields(i): keyTest = tests(i)
-        keyCategory = categories(i): keyOwner = owners(i): keyFlow = flows(i)
-        keyMin = minimums(i): keyMax = maximums(i): keyOrder = order(i)
-        j = i - 1
-        Do While j >= 1
-            If priorities(j) <= keyPriority Then Exit Do
-            priorities(j + 1) = priorities(j)
-            patterns(j + 1) = patterns(j): fields(j + 1) = fields(j)
-            tests(j + 1) = tests(j): categories(j + 1) = categories(j)
-            owners(j + 1) = owners(j): flows(j + 1) = flows(j)
-            minimums(j + 1) = minimums(j): maximums(j + 1) = maximums(j)
-            order(j + 1) = order(j)
-            j = j - 1
-        Loop
-        priorities(j + 1) = keyPriority
-        patterns(j + 1) = keyPattern: fields(j + 1) = keyField
-        tests(j + 1) = keyTest: categories(j + 1) = keyCategory
-        owners(j + 1) = keyOwner: flows(j + 1) = keyFlow
-        minimums(j + 1) = keyMin: maximums(j + 1) = keyMax
-        order(j + 1) = keyOrder
-    Next i
-End Sub
-
-Private Function FirstMatch(ByRef patterns() As String, ByRef fields() As String, _
-                            ByRef tests() As String, ByRef flows() As String, _
-                            ByRef minimums() As Double, ByRef maximums() As Double, _
-                            ByVal ruleCount As Long, ByVal merchant As String, _
-                            ByVal description As String, ByVal accountName As String, _
-                            ByVal amount As Double) As Long
-    Dim i As Long
-    Dim target As String
-
-    For i = 1 To ruleCount
-        Select Case UCase$(fields(i))
-            Case "DESCRIPTION": target = UCase$(description)
-            Case "ACCOUNT": target = UCase$(accountName)
-            Case "ANY", "": target = UCase$(merchant & " " & description)
-            Case Else: target = UCase$(merchant)
-        End Select
-
-        If FlowAllows(flows(i), amount) Then
-            If Abs(amount) >= minimums(i) - 0.0000001 And _
-               Abs(amount) <= maximums(i) + 0.0000001 Then
-                If TextMatches(target, patterns(i), tests(i)) Then
-                    FirstMatch = i
-                    Exit Function
-                End If
-            End If
-        End If
-    Next i
-End Function
-
-Private Function FlowAllows(ByVal flow As String, ByVal amount As Double) As Boolean
-    Select Case UCase$(Trim$(flow))
-        Case "MONEY IN", "IN", "CREDIT": FlowAllows = (amount > 0)
-        Case "MONEY OUT", "OUT", "DEBIT": FlowAllows = (amount < 0)
-        Case Else: FlowAllows = True
-    End Select
-End Function
-
-Private Function TextMatches(ByVal target As String, ByVal pattern As String, _
-                             ByVal test As String) As Boolean
-    Select Case UCase$(Trim$(test))
-        Case "STARTS WITH": TextMatches = (Left$(target, Len(pattern)) = pattern)
-        Case "ENDS WITH": TextMatches = (Right$(target, Len(pattern)) = pattern)
-        Case "EQUALS": TextMatches = (target = pattern)
-        Case "LIKE": TextMatches = (target Like pattern)
-        Case Else: TextMatches = (InStr(target, pattern) > 0)
-    End Select
-End Function
-
-Private Sub SaveHits(ByRef hits() As Long, ByVal ruleCount As Long)
+' hits is keyed by the rule's row on the sheet.
+Private Sub SaveHits(ByVal hits As Collection)
     Dim lo As ListObject
     Dim i As Long, column As Long
-    Dim current As Long
+    Dim added As Long, current As Long
 
     Set lo = RulesTable()
     column = modUtil.ColumnIndex(lo, RL_HITS)
-    For i = 1 To ruleCount
-        If hits(i) > 0 Then
-            current = CLng(modUtil.NzNum(lo.DataBodyRange.Cells(mRuleRowMap(i), column).Value))
-            lo.DataBodyRange.Cells(mRuleRowMap(i), column).Value = current + hits(i)
+    For i = 1 To modUtil.BodyRows(lo)
+        added = CLng(modUtil.GetVal(hits, CStr(i), 0))
+        If added > 0 Then
+            current = CLng(modUtil.NzNum(lo.DataBodyRange.Cells(i, column).Value))
+            lo.DataBodyRange.Cells(i, column).Value = current + added
         End If
     Next i
 End Sub

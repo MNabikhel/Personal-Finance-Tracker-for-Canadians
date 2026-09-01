@@ -200,8 +200,9 @@ End Function
 '--- Delimited text parsing -------------------------------------------------
 
 Public Function SplitRows(ByVal text As String, ByVal delimiter As String) As Collection
-    ' Returns a Collection of 0-based String arrays, one per record.  Quoted
-    ' fields may contain the delimiter and line breaks.
+    ' Returns a Collection of records; each record is itself a Collection of
+    ' field strings, indexed from 1.  Quoted fields may contain the delimiter
+    ' and line breaks.
     Dim rows As Collection
     Dim fields As Collection
     Dim i As Long, length As Long
@@ -257,35 +258,36 @@ End Function
 
 Private Sub FlushRow(ByVal rows As Collection, ByVal fields As Collection, _
                      ByVal lastField As String)
-    Dim values() As String
+    Dim trimmed As Collection
     Dim i As Long
+    Dim value As String
     Dim isBlank As Boolean
 
     fields.Add lastField
-    ReDim values(0 To fields.Count - 1)
+    Set trimmed = New Collection
     isBlank = True
     For i = 1 To fields.Count
-        values(i - 1) = Trim$(CStr(fields.Item(i)))
-        If Len(values(i - 1)) > 0 Then isBlank = False
+        value = Trim$(CStr(fields.Item(i)))
+        If Len(value) > 0 Then isBlank = False
+        trimmed.Add value
     Next i
-    If Not isBlank Then rows.Add values
+    If Not isBlank Then rows.Add trimmed
 End Sub
 
-Public Function FieldAt(ByRef values() As String, ByVal position As Long) As String
+Public Function FieldAt(ByVal fields As Collection, ByVal position As Long) As String
     ' 1-based column position; blank when the column does not exist.
-    If position < 1 Then Exit Function
-    If position - 1 > UBound(values) Then Exit Function
-    FieldAt = values(position - 1)
+    If position < 1 Or position > fields.Count Then Exit Function
+    FieldAt = fields.Item(position)
 End Function
 
-Public Function FieldsAt(ByRef values() As String, ByVal positions As String) As String
+Public Function FieldsAt(ByVal fields As Collection, ByVal positions As String) As String
     ' positions is a comma separated list such as "5,6"; the pieces are joined
     ' with a single space so multi-part descriptions read naturally.
     Dim parts() As String, i As Long, piece As String, out As String
     parts = Split(positions, ",")
     For i = LBound(parts) To UBound(parts)
         If IsNumeric(Trim$(parts(i))) Then
-            piece = FieldAt(values, CLng(Trim$(parts(i))))
+            piece = FieldAt(fields, CLng(Trim$(parts(i))))
             If Len(piece) > 0 Then
                 If Len(out) > 0 Then out = out & " "
                 out = out & piece
@@ -293,6 +295,15 @@ Public Function FieldsAt(ByRef values() As String, ByVal positions As String) As
         End If
     Next i
     FieldsAt = modUtil.CondenseSpaces(out)
+End Function
+
+Public Function JoinFields(ByVal fields As Collection, ByVal separator As String) As String
+    Dim i As Long, out As String
+    For i = 1 To fields.Count
+        If i > 1 Then out = out & separator
+        out = out & fields.Item(i)
+    Next i
+    JoinFields = out
 End Function
 
 '--- Numbers ----------------------------------------------------------------
@@ -408,8 +419,14 @@ Public Function ParseDate(ByVal text As String, ByVal pattern As String, _
     End If
 
     If m < 1 Or m > 12 Or d < 1 Or d > 31 Or y < 1900 Or y > 2200 Then Exit Function
+
     On Error GoTo Fail
-    ParseDate = DateSerial(y, m, d)
+    Dim result As Date
+    result = DateSerial(y, m, d)
+    ' DateSerial quietly rolls February 30th forward into March; a date that
+    ' does not survive the round trip was never a date.
+    If Year(result) <> y Or Month(result) <> m Or Day(result) <> d Then Exit Function
+    ParseDate = result
     ok = True
     Exit Function
 Fail:
