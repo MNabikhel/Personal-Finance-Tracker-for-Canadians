@@ -338,7 +338,8 @@ def build(today: Optional[date] = None) -> Workbook:
     wb.properties.title = APP_NAME
     wb.properties.description = (
         "Personal finance tracker for Canadian households. Import your bank and "
-        "credit card CSV exports and read your income and expenses by month.")
+        "credit card statements, CSV or PDF, and read your income and expenses by "
+        "month.")
     wb.properties.created = datetime.combine(today, time())
     wb.properties.modified = wb.properties.created
 
@@ -1285,8 +1286,9 @@ def build_settings(wb: Workbook, today: date):
     section(ws, row, "B", "E", "Privacy")
     put(ws, f"B{row + 1}",
         "This workbook never connects to your bank and never sends anything "
-        "anywhere. It only reads the CSV files you choose. Keep the file somewhere "
-        "safe - it contains your complete spending history.", LABEL_FONT, wrap=True)
+        "anywhere. It only reads the statement files you choose. Keep the file "
+        "somewhere safe - it contains your complete spending history.", LABEL_FONT,
+        wrap=True)
     ws.merge_cells(f"B{row + 1}:E{row + 3}")
     printing(ws, f"B1:E{row + 3}")
 
@@ -1367,13 +1369,25 @@ HELP_SECTIONS = [
         "3. List your accounts on the Accounts sheet - one row per bank or card "
         "account. Fill in \"File Name Contains\" with a snippet of the file name your "
         "bank produces so imports find the right account by themselves.",
-        "4. Download a CSV from each bank and press \"Import statements\".",
+        "4. Download a statement from each bank - CSV or PDF - and press \"Import "
+        "statements\".",
     ]),
     ("Importing", [
-        "The importer reads CSV files. Excel and PDF statements are not supported - "
-        "every Canadian bank offers a CSV download from the transaction list.",
-        "It recognises the layout from the file's own header line, shows you the "
-        "first few rows it parsed, and asks you to confirm before anything is written.",
+        "The importer reads CSV exports and PDF statements. CSV is the surer of the "
+        "two: it is data, every bank offers it from the transaction list, and its "
+        "layout is recognised from the header line. A PDF is a printed page, and its "
+        "text has to be got back out first.",
+        "PDFs are read with Excel's own PDF reader (Power Query, in Excel for Windows "
+        "under Microsoft 365) or, failing that, by Word converting the file. Where "
+        "neither is available the import says so; download the CSV instead. A scanned "
+        "statement has no text in it and cannot be read.",
+        "From a PDF, a line that starts with a date and ends with an amount is a "
+        "transaction. Card statements: a plain amount is a charge, a minus or CR a "
+        "credit. Bank statements: the running balance tells a withdrawal from a "
+        "deposit, and a line printed without a date takes the date above it. The "
+        "year comes from the statement date on the page.",
+        "Either way you are shown the first rows it read and asked to confirm before "
+        "anything is written.",
         "Money leaving an account is stored as a negative number and money arriving "
         "as a positive one, whichever way your bank writes it.",
         "Re-importing a statement that overlaps one you already loaded adds only the "

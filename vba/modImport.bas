@@ -2,8 +2,9 @@ Attribute VB_Name = "modImport"
 Option Explicit
 
 '== Statement import =========================================================
-' Reads one or more bank/credit-card CSV exports, normalises them into the
-' ledger's shape, skips rows that are already present and logs every batch.
+' Reads one or more bank/credit-card statements - CSV exports here, PDFs by
+' way of modPdf - normalises them into the ledger's shape, skips rows that are
+' already present and logs every batch.
 '
 ' Sign convention in the ledger: money leaving an account is negative, money
 ' arriving is positive - regardless of how the bank chose to express it.
@@ -22,8 +23,10 @@ Public Sub ImportStatements()
     If Not modSetup.EnsureConfigured() Then Exit Sub
 
     chosen = Application.GetOpenFilename( _
-        FileFilter:="Bank exports (*.csv;*.txt),*.csv;*.txt,All files (*.*),*.*", _
-        Title:="Select one or more bank or credit card exports", _
+        FileFilter:="Bank statements (*.csv;*.txt;*.pdf),*.csv;*.txt;*.pdf," & _
+                    "CSV exports (*.csv;*.txt),*.csv;*.txt," & _
+                    "PDF statements (*.pdf),*.pdf,All files (*.*),*.*", _
+        Title:="Select one or more bank or credit card statements", _
         MultiSelect:=True)
 
     If VarType(chosen) = vbBoolean Then Exit Sub   ' user cancelled
@@ -31,8 +34,13 @@ Public Sub ImportStatements()
     batchStamp = Format$(Now, "yyyymmdd-hhnnss")
 
     For i = LBound(chosen) To UBound(chosen)
-        line = ImportOneFile(CStr(chosen(i)), "B" & batchStamp & "-" & i, _
-                             totalImported, totalSkipped)
+        If modPdf.IsPdf(CStr(chosen(i))) Then
+            line = modPdf.ImportOnePdf(CStr(chosen(i)), "B" & batchStamp & "-" & i, _
+                                       totalImported, totalSkipped)
+        Else
+            line = ImportOneFile(CStr(chosen(i)), "B" & batchStamp & "-" & i, _
+                                 totalImported, totalSkipped)
+        End If
         If Len(line) > 0 Then
             filesDone = filesDone + 1
             summary = summary & line & vbCrLf
@@ -226,7 +234,9 @@ End Function
 
 '--- Writing to the ledger --------------------------------------------------
 
-Private Sub AppendRecords(ByVal records As Collection, ByVal batchId As String)
+' Adds the records to the ledger as one batch, uncategorised and tagged as
+' imported; the rules run over them afterwards.  Shared with the PDF import.
+Public Sub AppendRecords(ByVal records As Collection, ByVal batchId As String)
     Dim lo As ListObject
     Dim txn As clsTxn
     Dim firstRow As Long, count As Long

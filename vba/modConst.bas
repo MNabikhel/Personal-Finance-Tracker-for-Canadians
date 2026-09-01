@@ -7,7 +7,7 @@ Option Explicit
 '=============================================================================
 
 Public Const APP_NAME As String = "Canadian Finance Tracker"
-Public Const APP_VERSION As String = "1.0.0"
+Public Const APP_VERSION As String = "1.1.0"
 
 ' Worksheet names
 Public Const SH_DASHBOARD As String = "Dashboard"
