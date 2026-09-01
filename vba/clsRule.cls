@@ -61,6 +61,36 @@ Private Function TextMatches(ByVal target As String) As Boolean
         Case "ENDS WITH": TextMatches = (Right$(target, Len(needle)) = needle)
         Case "EQUALS": TextMatches = (target = needle)
         Case "LIKE": TextMatches = (target Like needle)
+        Case "WORD": TextMatches = ContainsWord(target, needle)
         Case Else: TextMatches = (InStr(target, needle) > 0)
     End Select
+End Function
+
+' "Contains", but only where the pattern stands as a word of its own.  Short
+' patterns are otherwise swallowed by longer names that happen to contain them:
+' MOBIL is a gas station and also the tail of FREEDOM MOBILE, MEC is a co-op
+' and also the start of MECHANIC.
+Private Function ContainsWord(ByVal target As String, ByVal needle As String) As Boolean
+    Dim at As Long
+
+    If Len(needle) = 0 Then Exit Function
+    at = InStr(target, needle)
+    Do While at > 0
+        If Not IsWordChar(CharBefore(target, at)) Then
+            If Not IsWordChar(Mid$(target, at + Len(needle), 1)) Then
+                ContainsWord = True
+                Exit Function
+            End If
+        End If
+        at = InStr(at + 1, target, needle)
+    Loop
+End Function
+
+Private Function CharBefore(ByVal target As String, ByVal at As Long) As String
+    If at > 1 Then CharBefore = Mid$(target, at - 1, 1)
+End Function
+
+Private Function IsWordChar(ByVal ch As String) As Boolean
+    If Len(ch) = 0 Then Exit Function
+    IsWordChar = (ch Like "[0-9A-Za-z]")
 End Function

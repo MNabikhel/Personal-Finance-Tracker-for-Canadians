@@ -113,7 +113,9 @@ Private Function ImportOneFile(ByVal path As String, ByVal batchId As String, _
 
     modUtil.FastMode True
     modUtil.Status "reading " & fileName & " ..."
-    Set records = ReadRecords(rows, profile, accountName, fileName, readCount, badCount)
+    Set records = ReadRecords(rows, profile, accountName, _
+                              modAccounts.OwnerOfAccount(accountName), _
+                              fileName, readCount, badCount)
     Set records = WithoutDuplicates(records, ExistingKeyCounts(), dupeCount)
     If records.Count > 0 Then AppendRecords records, batchId
     modUtil.FastMode False
@@ -141,16 +143,15 @@ End Function
 ' as a transaction and are counted as unreadable rather than stopping the
 ' import: a BMO export, for one, opens with three lines of prose.
 Public Function ReadRecords(ByVal rows As Collection, ByVal profile As clsProfile, _
-                            ByVal accountName As String, ByVal fileName As String, _
+                            ByVal accountName As String, ByVal ownerName As String, _
+                            ByVal fileName As String, _
                             ByRef readCount As Long, ByRef badCount As Long) As Collection
     Dim out As Collection
     Dim txn As clsTxn
-    Dim ownerName As String
     Dim i As Long
 
     Set out = New Collection
     Set ReadRecords = out
-    ownerName = modAccounts.OwnerOfAccount(accountName)
 
     For i = profile.SkipRows + 1 To rows.Count
         readCount = readCount + 1

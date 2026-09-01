@@ -226,8 +226,18 @@ RULE_COLUMNS = [
 ]
 
 RULE_FIELDS = ["Merchant", "Description", "Account", "Any"]
-RULE_TESTS = ["Contains", "Starts With", "Ends With", "Equals", "Like"]
+RULE_TESTS = ["Contains", "Starts With", "Ends With", "Equals", "Like", "Word"]
 RULE_FLOWS = ["Any", "Money in", "Money out"]
+
+# Patterns short enough to hide inside an unrelated name.  "MOBIL" is a gas
+# station and also the tail of FREEDOM MOBILE; "MEC" is the outdoors co-op and
+# also the start of MECHANIC.  These are matched as whole words instead, which
+# is what a person reading the rule would have assumed anyway.
+_WHOLE_WORD_PATTERNS = frozenset({
+    "A&W", "ANBL", "ATCO", "ESSO", "FIDO", "GST", "HUSKY", "IGA", "MAXI",
+    "MEC", "METRO", "MOBIL", "OCS", "OPUS", "SAQ", "SHAW", "SHELL", "STM",
+    "SUPER C", "TTC",
+})
 
 _SEED_RULES = [
     # A contribution to a registered plan is usually worded as a transfer
@@ -443,6 +453,8 @@ def seed_rules():
     """Expand the compact seed list into full rule rows."""
     rows = []
     for priority, look_in, test, pattern, flow, category in _SEED_RULES:
+        if test == "Contains" and pattern in _WHOLE_WORD_PATTERNS:
+            test = "Word"
         rows.append(
             [
                 priority,

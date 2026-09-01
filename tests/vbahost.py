@@ -20,7 +20,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import Iterable, List, Mapping, Optional, Sequence
 
 from . import libreoffice
 
@@ -28,9 +28,18 @@ VBA_DIR = Path(__file__).resolve().parent.parent / "vba"
 
 ATTRIBUTE_LINE = re.compile(r"^Attribute .*$", re.MULTILINE)
 
+# The "VERSION 1.0 CLASS / BEGIN ... END" preamble every .cls file opens with.
+CLASS_PREAMBLE = re.compile(r"\AVERSION [\d.]+ CLASS\s*\nBEGIN\n.*?\nEND\n",
+                            re.DOTALL)
+
 # Everything the parsing, clean-up and rule matching code needs, in dependency
 # order.  None of these modules touches Excel's object model.
 PARSING_MODULES = ["modConst", "modUtil", "modParse", "modRules", "modImport"]
+
+# The same, plus the classes a statement row passes through on its way to the
+# ledger and the format matching that decides which bank wrote the file.
+IMPORT_MODULES = ["modConst", "modUtil", "modParse", "clsTxn", "clsProfile",
+                  "clsRule", "modRules", "modProfiles", "modImport"]
 
 # The fixed part of the probe: it owns the output file so that a failure inside
 # the test's own code is still reported instead of vanishing.
@@ -83,16 +92,31 @@ class BasicError(AssertionError):
 
 
 def module_source(name: str) -> str:
-    if not name.endswith((".bas", ".cls")):
-        name += ".bas"
-    text = (VBA_DIR / name).read_text(encoding="utf-8")
-    return "Option VBASupport 1\n" + ATTRIBUTE_LINE.sub("", text)
+    """The text of ``vba/<name>.bas`` or ``vba/<name>.cls``, ready to insert."""
+    for suffix in (".bas", ".cls"):
+        path = VBA_DIR / (name + suffix)
+        if path.exists():
+            break
+    else:
+        raise FileNotFoundError(f"no .bas or .cls module named {name!r}")
+
+    header = "Option VBASupport 1\n"
+    if suffix == ".cls":
+        # A .bas is a module and a .cls is a class in the .xlsm container, but
+        # inserted as plain text both look the same, so the distinction has to
+        # be restated for LibreOffice or New would have nothing to make.
+        header += "Option ClassModule\n"
+    text = CLASS_PREAMBLE.sub("", path.read_text(encoding="utf-8"))
+    return header + ATTRIBUTE_LINE.sub("", text)
 
 
-def run(body: str, modules: Iterable[str] = PARSING_MODULES) -> str:
+def run(body: str, modules: Iterable[str] = PARSING_MODULES,
+        extra: Optional[Mapping[str, str]] = None) -> str:
     """Load ``modules``, run ``Sub Run`` from ``body``, return what it emitted.
 
     ``body`` must define ``Sub Run`` and report results by calling ``Emit``.
+    ``extra`` adds modules from source text rather than from ``vba/``, which is
+    how a test supplies the sheet rows the macros would otherwise read.
     """
     handle, output = tempfile.mkstemp(prefix="cft-basic-", suffix=".txt")
     os.close(handle)
@@ -107,6 +131,8 @@ def run(body: str, modules: Iterable[str] = PARSING_MODULES) -> str:
 
         for name in modules:
             _put(standard, name, module_source(name))
+        for name, source in (extra or {}).items():
+            _put(standard, name, source)
         _put(standard, "Body", "Option VBASupport 1\n\n" + body)
         _put(standard, "Probe",
              HARNESS.format(output=output, marker=ERROR_MARKER))
