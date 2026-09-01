@@ -88,7 +88,8 @@ End Function
 
 ' Decides which account a file belongs to: first by the "File Name Contains"
 ' hint, then by the bank format, and finally by asking.
-Public Function ResolveAccount(ByVal fileName As String, ByVal profile As Variant) As String
+Public Function ResolveAccount(ByVal fileName As String, _
+                               ByVal profile As clsProfile) As String
     Dim lo As ListObject
     Dim i As Long
     Dim hint As String
@@ -99,7 +100,7 @@ Public Function ResolveAccount(ByVal fileName As String, ByVal profile As Varian
     Dim choice As Long
 
     Set lo = AccountsTable()
-    profileName = CStr(profile(PS_NAME))
+    profileName = profile.Name
 
     For i = 1 To modUtil.BodyRows(lo)
         hint = AccountValue(i, AC_FILEMATCH)
@@ -139,7 +140,7 @@ Public Function ResolveAccount(ByVal fileName As String, ByVal profile As Varian
     ResolveAccount = names(choice - 1)
 End Function
 
-Public Function CreateAccountInteractively(ByVal profile As Variant) As String
+Public Function CreateAccountInteractively(ByVal profile As clsProfile) As String
     Dim accountName As String
     Dim accountType As Long
     Dim ownerChoice As Long
@@ -164,9 +165,9 @@ Public Function CreateAccountInteractively(ByVal profile As Variant) As String
         ownerChoice = 1
     End If
 
-    AddAccount accountName, CStr(profile(PS_INSTITUTION)), _
+    AddAccount accountName, profile.Institution, _
                CStr(types(accountType - 1)), CStr(owners(ownerChoice - 1)), _
-               CStr(profile(PS_NAME))
+               profile.Name
     CreateAccountInteractively = accountName
 End Function
 
