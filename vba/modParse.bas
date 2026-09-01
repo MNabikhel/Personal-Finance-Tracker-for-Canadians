@@ -482,6 +482,34 @@ Private Function ToYear(ByVal token As String) As Long
     ToYear = value
 End Function
 
+' 1-12 when the token is the name of a month, in English or French, whole or
+' abbreviated, with or without a trailing full stop; 0 for anything else.
+Public Function MonthFromName(ByVal token As String) As Long
+    Dim cleaned As String
+    cleaned = Trim$(token)
+    Do While Len(cleaned) > 0 And (Right$(cleaned, 1) = "." Or Right$(cleaned, 1) = ",")
+        cleaned = Left$(cleaned, Len(cleaned) - 1)
+    Loop
+    If Len(cleaned) < 3 Or Len(cleaned) > 9 Or IsNumeric(cleaned) Then Exit Function
+    ' The word has to be the start of a month's name, not merely share its
+    ' first three letters: MARKET and DECOR are not months.
+    Dim full As Variant, i As Long, upper As String
+    full = Array("JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", _
+                 "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER", _
+                 "JANVIER", "FEVRIER", "FÉVRIER", "MARS", "AVRIL", "MAI", "JUIN", _
+                 "JUILLET", "AOUT", "AOÛT", "SEPTEMBRE", "OCTOBRE", "NOVEMBRE", _
+                 "DECEMBRE", "DÉCEMBRE")
+    upper = UCase$(cleaned)
+    For i = LBound(full) To UBound(full)
+        If Len(upper) <= Len(full(i)) Then
+            If upper = Left$(full(i), Len(upper)) Then
+                MonthFromName = ToMonth(cleaned)
+                Exit Function
+            End If
+        End If
+    Next i
+End Function
+
 Private Function ToMonth(ByVal token As String) As Long
     Dim names As Variant, i As Long
     If IsNumeric(token) Then
