@@ -136,6 +136,53 @@ Fail:
     modUtil.ReportError "RepairFormulas"
 End Sub
 
+' The number the next transaction ID should carry: one past the highest in the
+' ledger, not the row count, so that IDs stay unique after rows are removed.
+Public Function NextTxnNumber(ByVal lo As ListObject) As Long
+    Dim ids As Variant
+    Dim i As Long
+    Dim text As String
+    Dim highest As Long
+
+    ids = ReadColumn(lo, COL_ID)
+    If IsArray(ids) Then
+        For i = 1 To UBound(ids, 1)
+            text = modUtil.NzStr(ids(i, 1))
+            If Left$(text, 1) = "T" And IsNumeric(Mid$(text, 2)) Then
+                If CLng(Val(Mid$(text, 2))) > highest Then highest = CLng(Val(Mid$(text, 2)))
+            End If
+        Next i
+    End If
+    NextTxnNumber = highest + 1
+End Function
+
+' Deletes every row whose value in the column equals the given text, and says
+' how many went.  A table that would be left empty keeps one blank row with
+' its formulas, which is how the rest of the code expects an empty ledger.
+Public Function DeleteRowsWhere(ByVal lo As ListObject, ByVal header As String, _
+                                ByVal wanted As String) As Long
+    Dim values As Variant
+    Dim i As Long
+    Dim removed As Long
+
+    values = ReadColumn(lo, header)
+    If Not IsArray(values) Then Exit Function
+
+    For i = UBound(values, 1) To 1 Step -1
+        If StrComp(modUtil.NzStr(values(i, 1)), wanted, vbTextCompare) = 0 Then
+            If modUtil.BodyRows(lo) > 1 Then
+                lo.ListRows(i).Delete
+            Else
+                lo.DataBodyRange.Rows(1).ClearContents
+                ApplyTemplates lo, 1, 1
+            End If
+            removed = removed + 1
+        End If
+    Next i
+    If removed > 0 Then SyncPrintArea lo
+    DeleteRowsWhere = removed
+End Function
+
 ' Reads one column of the ledger into a 1-based array, or an empty Variant when
 ' the ledger is empty.
 Public Function ReadColumn(ByVal lo As ListObject, ByVal header As String) As Variant

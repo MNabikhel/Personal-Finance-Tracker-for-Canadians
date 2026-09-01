@@ -1,16 +1,16 @@
 # Canadian Finance Tracker
 
 A personal finance tracker for Canadian households, built as a single
-macro-enabled Excel workbook. Export the CSV files your bank and credit cards
-already give you, press one button, and the workbook sorts every transaction
-into a category and shows you where the money went — for one person, or for a
-couple.
+macro-enabled Excel workbook. Download the statements your bank and credit
+cards already give you — CSV or PDF — press one button, and the workbook sorts
+every transaction into a category and shows you where the money went — for one
+person, or for a couple.
 
 **Download the workbook:** [`dist/Canadian-Finance-Tracker.xlsm`](dist/Canadian-Finance-Tracker.xlsm)
 
 Nothing leaves your computer. There is no add-in to install, no account to
-create and no connection to your bank — the workbook only ever reads the CSV
-files you point it at.
+create and no connection to your bank — the workbook only ever reads the
+statement files you point it at.
 
 ---
 
@@ -37,7 +37,10 @@ RBC, TD, CIBC, Scotiabank, BMO, National Bank, Desjardins, Tangerine, Simplii,
 EQ Bank, PC Financial, KOHO, Wealthsimple Cash and Amex Canada, plus two
 generic layouts and a blank row to fill in for anything else. The importer
 recognises a file from its own header line, shows you the first rows it parsed
-and asks you to confirm before writing anything.
+and asks you to confirm before writing anything. PDF statements are read too,
+through Excel's own PDF reader, and go through the same preview and the same
+duplicate check — see [Importing statements](#importing-statements) for what
+that needs and where it stops.
 
 **Sorts it out for you.** 194 seeded rules map merchant names onto 92
 categories in 14 groups. Anything the rules cannot place is left as
@@ -92,14 +95,16 @@ it. The setup wizard offers to delete it when you are ready for your own.
 5. **List your accounts** on the *Accounts* sheet, one row per bank or card
    account. Put a snippet of the file name your bank produces in *File Name
    Contains* and imports will find the right account by themselves.
-6. **Download a CSV from each bank and press *Import statements*.**
+6. **Download a statement from each bank — CSV or PDF — and press *Import
+   statements*.**
 
 ### Buttons and shortcuts
 
 The dashboard carries *Import statements*, *Apply rules*, *Find transfers*,
 *Needs a category*, *Refresh*, *Setup wizard*, *Couple mode on/off* and *Help*.
-The Transactions sheet carries *Teach a rule*, *Set owner*, *Show all rows*,
-*Apply rules to all*, *Rebuild formulas* and *Start fresh*.
+The Transactions sheet carries *Import statements*, *Undo an import*, *Teach a
+rule*, *Set owner*, *Show all rows*, *Apply rules to all*, *Rebuild formulas*,
+*Start fresh* and *Back to dashboard*.
 
 | Shortcut | Does |
 | --- | --- |
@@ -115,8 +120,12 @@ so if they are ever missing, close and reopen the workbook with macros enabled.
 
 ## Importing statements
 
-CSV only. Excel and PDF statements are not supported, and every Canadian bank
-offers a CSV download from its transaction list.
+*Import statements* takes CSV exports and PDF statements, any mix of them at
+once. CSV is the surer of the two — it is data, and every Canadian bank offers
+it from the transaction list — so it is described first; PDFs are
+[below](#pdf-statements).
+
+### CSV exports
 
 These layouts are pre-configured on the *Bank Formats* sheet:
 
@@ -159,6 +168,52 @@ Three things worth knowing:
 - **Every batch is logged.** The *Import Log* sheet records the file, the
   profile used, the account, and how many rows were read, added, skipped as
   duplicates and skipped as unreadable.
+- **Every batch can be taken back.** *Undo an import* on the Transactions
+  sheet lists the recent batches, deletes everything the one you pick added,
+  and marks its log row *Undone*. Wrong file, wrong account, or a PDF whose
+  signs came out the wrong way round: one press, not a hunt through the
+  ledger. Transaction numbers are never reused afterwards.
+
+### PDF statements
+
+A PDF is a printed page, not data: the file stores where each piece of text
+sits on the page, and a reader has to work out which pieces form a row and
+which a column. Excel has exactly one such reader, Power Query's *From PDF*
+connector, and the workbook drives it from VBA: the PDF is loaded through a
+temporary query onto a scratch sheet, its lines are read, and the query and
+the sheet are removed again. Where that reader is missing, Word is asked to
+convert the file instead (any Word since 2013 opens PDFs). Where neither is
+available, the import says so and points you at the CSV.
+
+What that means in practice:
+
+| | |
+| --- | --- |
+| **Works in** | Excel for Windows under Microsoft 365 (Power Query's PDF reader), or any Excel on a machine with Word 2013 or later. |
+| **Does not work in** | Excel for Mac, Excel on the web, and perpetual Excel 2016/2019 without Word. Import the CSV there. |
+| **Scanned statements** | Have no text in them and cannot be read. The import tells you so. |
+
+Once the text is out, a line that starts with a date and ends with an amount
+is a transaction, and everything else on the page — addresses, totals,
+notices, column headings — is not. Card statements print a transaction date
+and a posting date; the first is used. A plain amount on a card is a charge,
+a minus sign or a `CR` a credit. Bank account statements carry a running
+balance, and the balance moving down or up is what tells a withdrawal from a
+deposit; a line printed without a date (RBC prints the date once for a day's
+transactions) takes the date above it, provided the balance vouches for it.
+Reference numbers ahead of the date (Scotiabank) are stepped over, French
+statements with `03 mars` and `1 234,56` are read, and the year — which card
+statements do not print beside each line — comes from the latest full date on
+the page, with December lines on a January statement placed in the year
+before. The importer decides whether it is looking at a card or a bank
+statement from the words on the page or, failing those, from whether the
+balances add up, and offers the other reading if you say no to the preview.
+
+The preview matters more for PDFs than for CSVs. Look at the signs before you
+say yes; if the bank prints its statement in some shape this does not read,
+the CSV always works. The first time Power Query reads a file it may ask about
+privacy levels; answering *Public* or ignoring them for this file is fine,
+since the query only ever reads the one PDF and writes nowhere.
 
 ---
 
@@ -221,8 +276,8 @@ With it on:
 | **Household** | Couple mode only: settling up, income shares, year to date. |
 | **Tax Summary** | Totals per CRA line number for the tax year of the report month, split per person. |
 | **Registered Plans** | RRSP/TFSA/FHSA/RESP contributions per person against your room, with the published annual limits. |
-| **Bank Formats** | The CSV layouts described above. Editable. |
-| **Import Log** | One row per imported file. |
+| **Bank Formats** | The CSV layouts described above. Editable. PDFs do not use it. |
+| **Import Log** | One row per imported file, CSV or PDF, and for a PDF which reader got its text out. |
 | **Settings** | Household mode, names, split, province, transfer window, duplicate skipping. |
 | **Help** | The same guidance as this README, inside the workbook. |
 | **Engine** | Hidden. Drop-down lists and formula templates. Leave it alone. |
@@ -300,7 +355,7 @@ pip install -r requirements-dev.txt
 python3 -m unittest discover -s tests -t .
 ```
 
-97 tests, about 12 seconds. They fall into five groups:
+121 tests, about 15 seconds. They fall into six groups:
 
 - **Format conformance** (`test_ovba.py`) — the compression and encryption
   vectors from [MS-OVBA] §3.2 and §2.3.1.15–17, so the writer is checked
@@ -315,6 +370,14 @@ python3 -m unittest discover -s tests -t .
   four sample bank exports, checking that every row comes back with the right
   date, sign, description, category, owner and duplicate key, that header rows
   are skipped, and that re-importing adds nothing.
+- **PDF statement text** (`test_pdftext.py`) — the statement parser, in
+  LibreOffice Basic, over text in the shapes Canadian statements take: a card
+  with posting dates, `CR` credits and the year only in the header; a chequing
+  account with a running balance and the date printed once per day; a
+  Scotiabank card with reference numbers; a French statement; a January
+  statement with December lines. Getting the text out of the PDF is Excel's
+  part and cannot be run here, so `modPdf.bas` is covered by static analysis
+  only.
 - **The built workbook** (`test_workbook.py`) — the package is a valid zip with
   the VBA project declared and macro-enabled content types; the sheets, tables,
   columns and named ranges the macros reference all exist; and the workbook is
@@ -354,6 +417,8 @@ tools/
 vba/
   ThisWorkbook.cls        Workbook events
   modImport.bas           Statement import
+  modPdf.bas              Getting the text out of a PDF (Power Query, then Word)
+  modPdfText.bas          Statement text to transactions
   modParse.bas            CSV and field parsing
   modProfiles.bas         Bank format detection
   modRules.bas            Merchant cleanup and categorisation
@@ -388,8 +453,13 @@ drift apart.
   without VBA compatibility mode.
 - **The macros have not been run in Excel itself.** They are exercised in
   LibreOffice Basic and checked by static analysis, which catches a great deal,
-  but nothing here has been through the real VBA compiler.
-- **CSV only.** No PDF or Excel statements, and no bank connections.
+  but nothing here has been through the real VBA compiler. That goes double
+  for the PDF plumbing: Power Query and Word exist only in Office, so the code
+  that drives them has been read carefully but never run.
+- **PDF import needs Windows.** Excel's PDF reader is in Excel for Windows
+  under Microsoft 365; Word can stand in for it. Elsewhere, and for scanned
+  statements, use the CSV. There are no bank connections and no Excel-format
+  statements.
 - **Bank formats change.** The profiles are a best-effort mapping. Check the
   preview on first import and adjust the *Bank Formats* row if a bank has moved
   its columns.

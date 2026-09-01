@@ -36,6 +36,8 @@ MODULE_ORDER = [
     "modRules",
     "modTransfers",
     "modImport",
+    "modPdfText",
+    "modPdf",
     "modHousehold",
     "modReport",
     "modSetup",

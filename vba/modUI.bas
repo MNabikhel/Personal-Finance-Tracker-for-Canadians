@@ -11,12 +11,15 @@ Private Const BTN_PREFIX As String = "cftBtn_"
 Private Const BTN_WIDTH As Single = 132
 Private Const BTN_HEIGHT As Single = 26
 Private Const BTN_GAP As Single = 6
+' Two rows of buttons fit above each table's header; the ledger's bar is
+' wider because the ledger is.
 Private Const BTN_PER_ROW As Long = 4
+Private Const BTN_PER_LEDGER_ROW As Long = 5
 
 Public Sub EnsureButtons()
     On Error Resume Next
-    DrawBar modUtil.Sh(SH_DASHBOARD), "ButtonAnchor", DashboardButtons()
-    DrawBar modUtil.Sh(SH_TXN), "TxnButtonAnchor", LedgerButtons()
+    DrawBar modUtil.Sh(SH_DASHBOARD), "ButtonAnchor", DashboardButtons(), BTN_PER_ROW
+    DrawBar modUtil.Sh(SH_TXN), "TxnButtonAnchor", LedgerButtons(), BTN_PER_LEDGER_ROW
     On Error GoTo 0
 End Sub
 
@@ -35,6 +38,7 @@ End Function
 Private Function LedgerButtons() As Variant
     LedgerButtons = Array( _
         "Import statements", "modImport.ImportStatements", _
+        "Undo an import", "modImport.UndoImport", _
         "Teach a rule", "modRules.TeachRuleFromSelection", _
         "Set owner", "modHousehold.SetOwnerForSelection", _
         "Show all rows", "modReport.ClearLedgerFilters", _
@@ -45,7 +49,7 @@ Private Function LedgerButtons() As Variant
 End Function
 
 Private Sub DrawBar(ByVal target As Worksheet, ByVal anchorName As String, _
-                    ByVal definitions As Variant)
+                    ByVal definitions As Variant, ByVal perRow As Long)
     Dim anchor As Range
     Dim i As Long, index As Long
     Dim btn As Shape
@@ -59,8 +63,8 @@ Private Sub DrawBar(ByVal target As Worksheet, ByVal anchorName As String, _
     If anchor Is Nothing Then Set anchor = target.Range("B3")
 
     For i = LBound(definitions) To UBound(definitions) - 1 Step 2
-        posLeft = anchor.Left + (index Mod BTN_PER_ROW) * (BTN_WIDTH + BTN_GAP)
-        posTop = anchor.Top + (index \ BTN_PER_ROW) * (BTN_HEIGHT + BTN_GAP)
+        posLeft = anchor.Left + (index Mod perRow) * (BTN_WIDTH + BTN_GAP)
+        posTop = anchor.Top + (index \ perRow) * (BTN_HEIGHT + BTN_GAP)
 
         Set btn = target.Shapes.AddShape(msoShapeRoundedRectangle, posLeft, posTop, _
                                          BTN_WIDTH, BTN_HEIGHT)
