@@ -138,7 +138,7 @@ TXN_HEADERS = [
 ]
 
 TXN_WIDTHS = {
-    "Txn ID": 10, "Date": 11, "Month": 9, "Account": 22, "Paid By": 12,
+    "Txn ID": 10, "Date": 11, "Month": 9, "Account": 25, "Paid By": 12,
     "Owner": 12, "Description": 46, "Merchant": 24, "Amount": 12,
     "Category": 24, "Group": 14, "Type": 10, "Essential": 10, "Tax Tag": 18,
     "Split A %": 9, "Share A": 12, "Share B": 12, "Reimbursable": 12,
