@@ -1,0 +1,10 @@
+-r requirements.txt
+
+# An independent reader for vbaProject.bin, so the MS-OVBA output is checked by
+# something other than the code that wrote it.
+oletools>=0.60
+
+# The rest of the suite runs the VBA in headless LibreOffice Basic and
+# recalculates the workbook in LibreOffice Calc.  Neither comes from pip:
+#
+#     sudo apt-get install libreoffice-calc python3-uno
