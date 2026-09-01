@@ -24,7 +24,11 @@ from openpyxl.workbook import Workbook
 
 CONTENT_TYPES = "[Content_Types].xml"
 WORKBOOK_RELS = "xl/_rels/workbook.xml.rels"
+CORE_PROPERTIES = "docProps/core.xml"
 VBA_PART = "xl/vbaProject.bin"
+
+CREATED = re.compile(r"(<dcterms:created\b[^>]*>)([^<]*)(</dcterms:created>)")
+MODIFIED = re.compile(r"(<dcterms:modified\b[^>]*>)([^<]*)(</dcterms:modified>)")
 
 SHEET_MAIN = ("application/vnd.openxmlformats-officedocument."
               "spreadsheetml.sheet.main+xml")
@@ -62,6 +66,21 @@ def _patch_workbook_rels(xml: str) -> str:
     return xml.replace("</Relationships>", relationship + "</Relationships>")
 
 
+def _patch_core_properties(xml: str) -> str:
+    """Date the file from its own creation rather than from the clock.
+
+    openpyxl stamps dcterms:modified with the current time as it saves, which
+    would be the one thing in the package that changed between two builds of
+    identical source.  Nothing has happened to the file since it was written,
+    so the two timestamps should agree anyway.
+    """
+    created = CREATED.search(xml)
+    if created is None:
+        return xml
+    return MODIFIED.sub(lambda match: match.group(1) + created.group(2)
+                        + match.group(3), xml)
+
+
 def to_xlsm(workbook: Workbook, vba_project: bytes) -> bytes:
     """Serialise ``workbook`` as a macro-enabled package."""
     plain = io.BytesIO()
@@ -76,6 +95,8 @@ def to_xlsm(workbook: Workbook, vba_project: bytes) -> bytes:
                 data = _patch_content_types(data.decode("utf-8")).encode("utf-8")
             elif name == WORKBOOK_RELS:
                 data = _patch_workbook_rels(data.decode("utf-8")).encode("utf-8")
+            elif name == CORE_PROPERTIES:
+                data = _patch_core_properties(data.decode("utf-8")).encode("utf-8")
             parts.append((name, data))
 
     if not any(name == WORKBOOK_RELS for name, _ in parts):

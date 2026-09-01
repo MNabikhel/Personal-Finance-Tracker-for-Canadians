@@ -8,7 +8,7 @@ still readable with macros switched off.
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Iterable, List, Optional, Sequence
 
 from openpyxl import Workbook
@@ -22,6 +22,8 @@ from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.workbook.defined_name import DefinedName
 
 from . import data, sample
+
+APP_NAME = "Canadian Finance Tracker"       # matches modConst.APP_NAME
 
 # --- Look and feel ----------------------------------------------------------
 
@@ -291,6 +293,17 @@ def build(today: Optional[date] = None) -> Workbook:
     wb = Workbook()
     wb.remove(wb.active)
     wb.code_name = "ThisWorkbook"
+
+    # Dated from the build rather than the clock, so building the same source
+    # twice produces the same bytes.
+    wb.properties.creator = APP_NAME
+    wb.properties.lastModifiedBy = APP_NAME
+    wb.properties.title = APP_NAME
+    wb.properties.description = (
+        "Personal finance tracker for Canadian households. Import your bank and "
+        "credit card CSV exports and read your income and expenses by month.")
+    wb.properties.created = datetime.combine(today, time())
+    wb.properties.modified = wb.properties.created
 
     build_dashboard(wb, report_month(today))
     build_transactions(wb, records)
