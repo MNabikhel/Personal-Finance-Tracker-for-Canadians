@@ -56,11 +56,12 @@ biggest merchants and three charts; a twelve-month report by group and by
 category; and a budget sheet that compares each category against the monthly
 budget you set.
 
-**Works for two people.** Turn on couple mode and every transaction gets an
-owner — one of you, or Joint. Joint costs are divided by your household split,
-the Household sheet works out who owes whom, and a selector on the dashboard
-switches every number in the workbook between the whole household and one
-person's share.
+**Works for two people, if you want it to.** In couple mode every transaction
+gets an owner — one of you, or Joint. Joint costs are divided by your household
+split, the Household sheet works out who owes whom, and a selector on the
+dashboard switches every number in the workbook between the whole household and
+one person's share. Answer "Just me" in the setup wizard and all of it
+disappears.
 
 **Speaks Canadian.** Hydro, Presto/Compass/OPUS, LCBO/SAQ, property tax,
 daycare, OSAP, CRA payments and refunds, the Canada Child Benefit, the GST/HST
@@ -181,10 +182,12 @@ A category you type in by hand is tagged *Manual* and is never overwritten by
 
 ## Couples mode
 
-Off by default. Turn it on in the setup wizard, with the *Couple mode on/off*
-button, or on the *Settings* sheet. In single mode the per-person columns and
-the Household sheet are simply hidden — nothing is deleted, and switching back
-and forth is safe.
+The sample data is a couple's, so the file arrives in couple mode; the setup
+wizard asks which you are and switches the whole workbook to match. After that
+you can change your mind at any time with the *Couple mode on/off* button on
+the dashboard or the drop-down on the *Settings* sheet. Single mode only hides
+the per-person columns and the Household sheet — nothing is deleted, and going
+back and forth is safe.
 
 With it on:
 
