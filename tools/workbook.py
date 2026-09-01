@@ -273,8 +273,10 @@ def add_table(ws: Worksheet, name: str, ref: str, style: str = "TableStyleMedium
 
 def validate(ws: Worksheet, ranges: Iterable[str], source: str,
              allow_blank: bool = True, prompt: str = None):
-    dv = DataValidation(type="list", formula1=source, allow_blank=allow_blank,
-                        showErrorMessage=False)
+    # The file format stores a validation's formula without the leading "="
+    # a user would type; Excel's own files never carry one.
+    dv = DataValidation(type="list", formula1=source.lstrip("="),
+                        allow_blank=allow_blank, showErrorMessage=False)
     if prompt:
         dv.prompt = prompt
         dv.showInputMessage = True
@@ -285,7 +287,10 @@ def validate(ws: Worksheet, ranges: Iterable[str], source: str,
 
 
 def name(wb: Workbook, key: str, refers_to: str):
-    wb.defined_names[key] = DefinedName(key, attr_text=refers_to)
+    # As with validations: a defined name's text is the formula without "=".
+    # "=tblCategories[Category]" written verbatim is what Excel reports as a
+    # damaged named range when it opens the file.
+    wb.defined_names[key] = DefinedName(key, attr_text=refers_to.lstrip("="))
 
 
 def quoted(sheet_name: str) -> str:

@@ -241,6 +241,31 @@ class ShapeTests(unittest.TestCase):
             with self.subTest(key):
                 self.assertIn(key, self.wb.defined_names)
 
+    def test_names_and_validations_are_stored_the_way_excel_stores_them(self):
+        # The file format holds a formula without the "=" a user types.  A
+        # defined name written as "=tblCategories[Category]" is reported by
+        # Excel as a damaged named range when the file opens.
+        for key, defined in self.wb.defined_names.items():
+            with self.subTest(key):
+                self.assertFalse(defined.attr_text.startswith("="), defined.attr_text)
+        for ws in self.wb.worksheets:
+            for validation in ws.data_validations.dataValidation:
+                with self.subTest(f"{ws.title} {validation.sqref}"):
+                    self.assertFalse(str(validation.formula1).startswith("="))
+
+    def test_table_headers_match_their_column_definitions(self):
+        # Excel repairs (and empties) any table whose header cells differ from
+        # the column names in its table part.
+        from openpyxl.utils import range_boundaries
+        for ws in self.wb.worksheets:
+            for table_name in ws.tables:
+                table = ws.tables[table_name]
+                min_col, min_row, _, _ = range_boundaries(table.ref)
+                cells = [ws.cell(row=min_row, column=min_col + i).value
+                         for i in range(len(table.tableColumns))]
+                with self.subTest(table_name):
+                    self.assertEqual(cells, [c.name for c in table.tableColumns])
+
     def test_the_formula_templates_match_the_built_rows(self):
         # The macros copy these onto rows they add, so a template that has
         # drifted from the built rows would quietly produce two kinds of row.
