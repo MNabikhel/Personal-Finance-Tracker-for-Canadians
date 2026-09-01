@@ -102,8 +102,9 @@ it. The setup wizard offers to delete it when you are ready for your own.
 
 The dashboard carries *Import statements*, *Apply rules*, *Find transfers*,
 *Needs a category*, *Refresh*, *Setup wizard*, *Couple mode on/off* and *Help*.
-The Transactions sheet carries *Teach a rule*, *Set owner*, *Show all rows*,
-*Apply rules to all*, *Rebuild formulas* and *Start fresh*.
+The Transactions sheet carries *Import statements*, *Undo an import*, *Teach a
+rule*, *Set owner*, *Show all rows*, *Apply rules to all*, *Rebuild formulas*,
+*Start fresh* and *Back to dashboard*.
 
 | Shortcut | Does |
 | --- | --- |
@@ -167,6 +168,11 @@ Three things worth knowing:
 - **Every batch is logged.** The *Import Log* sheet records the file, the
   profile used, the account, and how many rows were read, added, skipped as
   duplicates and skipped as unreadable.
+- **Every batch can be taken back.** *Undo an import* on the Transactions
+  sheet lists the recent batches, deletes everything the one you pick added,
+  and marks its log row *Undone*. Wrong file, wrong account, or a PDF whose
+  signs came out the wrong way round: one press, not a hunt through the
+  ledger. Transaction numbers are never reused afterwards.
 
 ### PDF statements
 

@@ -15,6 +15,13 @@ Public Const AC_FILEMATCH As String = "File Name Contains"
 Public Const AC_INCLUDE As String = "Include in Household"
 Public Const AC_NOTES As String = "Notes"
 
+' Import Log column headers
+Public Const LG_WHEN As String = "When"
+Public Const LG_BATCH As String = "Batch"
+Public Const LG_FILE As String = "File"
+Public Const LG_IMPORTED As String = "Imported"
+Public Const LG_STATUS As String = "Status"
+
 Public Function AccountsTable() As ListObject
     Set AccountsTable = modUtil.Tbl(SH_ACCOUNTS, TBL_ACCOUNTS)
 End Function

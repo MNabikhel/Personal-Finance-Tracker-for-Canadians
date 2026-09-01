@@ -249,7 +249,7 @@ Public Sub AppendRecords(ByVal records As Collection, ByVal batchId As String)
 
     count = records.Count
     Set lo = modUtil.TxnTable()
-    nextId = modUtil.BodyRows(lo) + 1
+    nextId = modLedger.NextTxnNumber(lo)
     firstRow = modLedger.AddRows(lo, count)
 
     ReDim ids(1 To count, 1 To 1)
@@ -294,6 +294,87 @@ Public Sub AppendRecords(ByVal records As Collection, ByVal batchId As String)
     modLedger.WriteColumn lo, firstRow, count, COL_KEY, keys
     modLedger.WriteColumn lo, firstRow, count, COL_TAGGEDBY, tags
 End Sub
+
+'--- Taking an import back ----------------------------------------------------
+
+' Deletes everything one batch added and marks it in the Import Log.  For a
+' statement read against the wrong account, or a PDF whose signs came out
+' wrong: one press instead of a hunt through the ledger.
+Public Sub UndoImport()
+    Dim logTable As ListObject
+    Dim options() As String, ids() As String
+    Dim logRows() As Long
+    Dim i As Long, count As Long, choice As Long
+    Dim statusColumn As Long
+    Dim batchId As String
+    Dim removed As Long
+
+    On Error GoTo Fail
+    Set logTable = modUtil.Tbl(SH_LOG, TBL_LOG)
+    statusColumn = modUtil.ColumnIndex(logTable, modAccounts.LG_STATUS)
+
+    ' The most recent batches first, leaving out any already undone.
+    For i = modUtil.BodyRows(logTable) To 1 Step -1
+        batchId = modUtil.NzStr(logTable.DataBodyRange.Cells(i, _
+                      modUtil.ColumnIndex(logTable, modAccounts.LG_BATCH)).Value)
+        If Len(batchId) > 0 And _
+           Len(modUtil.NzStr(logTable.DataBodyRange.Cells(i, statusColumn).Value)) = 0 Then
+            ReDim Preserve options(0 To count)
+            ReDim Preserve ids(0 To count)
+            ReDim Preserve logRows(0 To count)
+            options(count) = LogLabel(logTable, i)
+            ids(count) = batchId
+            logRows(count) = i
+            count = count + 1
+            If count = 9 Then Exit For
+        End If
+    Next i
+
+    If count = 0 Then
+        MsgBox "There is no import to undo.", vbInformation, APP_NAME
+        Exit Sub
+    End If
+
+    choice = modUtil.AskChoice("Which import should be taken back?" & vbCrLf & _
+                               "Every transaction it added is deleted from the ledger.", _
+                               options)
+    If choice = 0 Then Exit Sub
+
+    If MsgBox("Delete the transactions imported from " & vbCrLf & _
+              options(choice - 1) & "?" & vbCrLf & vbCrLf & _
+              "Categories you set on them by hand go with them.", _
+              vbYesNo + vbExclamation, APP_NAME) <> vbYes Then Exit Sub
+
+    modUtil.FastMode True
+    removed = modLedger.DeleteRowsWhere(modUtil.TxnTable(), COL_BATCH, ids(choice - 1))
+    logTable.DataBodyRange.Cells(logRows(choice - 1), statusColumn).Value = _
+        "Undone " & Format$(Now, "yyyy-mm-dd hh:nn")
+    modUtil.FastMode False
+    Application.Calculate
+    modReport.RefreshAll
+
+    MsgBox removed & " transaction(s) removed." & vbCrLf & vbCrLf & _
+           "Transfers that were paired with them are still marked as transfers; " & _
+           "run ""Find transfers"" again if that matters.", vbInformation, APP_NAME
+    Exit Sub
+
+Fail:
+    modUtil.ReportError "UndoImport"
+End Sub
+
+' How a batch is described in the undo menu: its file, count and date.
+Private Function LogLabel(ByVal logTable As ListObject, ByVal rowIndex As Long) As String
+    Dim whenText As String
+    Dim whenValue As Variant
+    whenValue = logTable.DataBodyRange.Cells(rowIndex, _
+                    modUtil.ColumnIndex(logTable, modAccounts.LG_WHEN)).Value
+    If IsDate(whenValue) Then whenText = " on " & Format$(CDate(whenValue), "yyyy-mm-dd")
+    LogLabel = modUtil.NzStr(logTable.DataBodyRange.Cells(rowIndex, _
+                   modUtil.ColumnIndex(logTable, modAccounts.LG_FILE)).Value, "(no file)") & _
+               " - " & modUtil.NzStr(logTable.DataBodyRange.Cells(rowIndex, _
+                   modUtil.ColumnIndex(logTable, modAccounts.LG_IMPORTED)).Value, "0") & _
+               " added" & whenText
+End Function
 
 Public Function FileNameOnly(ByVal path As String) As String
     Dim separatorAt As Long

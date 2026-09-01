@@ -762,18 +762,19 @@ def build_formats(wb: Workbook):
 def build_log(wb: Workbook):
     ws = wb.create_sheet(SH_LOG)
     ws.sheet_view.showGridLines = False
-    widths(ws, {"A": 2, "B": 19, "C": 22, "D": 30, "E": 28, "F": 24, "G": 11,
-                "H": 11, "I": 12, "J": 12})
+    widths(ws, {"A": 2, "B": 19, "C": 22, "D": 30, "E": 44, "F": 24, "G": 11,
+                "H": 11, "I": 12, "J": 12, "K": 18})
 
     put(ws, "B1", "Import log", TITLE_FONT)
-    put(ws, "B2", "Written by the importer: one row per file.", SUB_FONT)
+    put(ws, "B2", "Written by the importer: one row per file. \"Undo an import\" on the "
+                  "Transactions sheet takes a batch back and says so here.", SUB_FONT)
 
     headers = ["When", "Batch", "File", "Format", "Account", "Rows read",
-               "Imported", "Duplicates", "Unreadable"]
+               "Imported", "Duplicates", "Unreadable", "Status"]
     table_header(ws, 4, headers)
     ws.cell(row=5, column=2, value=None)
 
-    add_table(ws, "tblLog", "B4:J5")
+    add_table(ws, "tblLog", "B4:K5")
     ws.freeze_panes = "B5"
     printing(ws, landscape=True, titles="4:4")
 
@@ -1392,6 +1393,9 @@ HELP_SECTIONS = [
         "as a positive one, whichever way your bank writes it.",
         "Re-importing a statement that overlaps one you already loaded adds only the "
         "new rows. Two identical purchases on the same day are still kept as two.",
+        "Imported the wrong file, or against the wrong account? \"Undo an import\" on "
+        "the Transactions sheet lists the recent batches and deletes everything the "
+        "one you pick added. The Import Log keeps the row and marks it Undone.",
         "If a bank's columns do not match, fix the column numbers on the Bank Formats "
         "sheet - it takes a few seconds and no code changes.",
     ]),
