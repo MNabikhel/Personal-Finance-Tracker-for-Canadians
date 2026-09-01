@@ -1394,7 +1394,9 @@ HELP_SECTIONS = [
         "expenses so they do not double count.",
     ]),
     ("Couples", [
-        "Set Household mode to Couple in the setup wizard or on the Settings sheet.",
+        "Set Household mode to Couple in the setup wizard, with the \"Couple mode "
+        "on/off\" button on the Dashboard, or on the Settings sheet. Single mode "
+        "hides everything that needs two people; nothing is deleted.",
         "Every transaction has an Owner: one of you, or Joint. Joint transactions are "
         "divided using the household split, which a category can override in \"Joint "
         "Split A\" on the Categories sheet.",
