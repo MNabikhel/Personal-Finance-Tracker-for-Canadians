@@ -26,6 +26,7 @@ from openpyxl.workbook.defined_name import DefinedName
 from . import data, sample
 
 APP_NAME = "Canadian Finance Tracker"       # matches modConst.APP_NAME
+APP_VERSION = "1.1.0"                       # matches modConst.APP_VERSION
 
 # --- Look and feel ----------------------------------------------------------
 
@@ -421,8 +422,11 @@ def build_dashboard(wb: Workbook, opening_month: str):
     put(ws, "B1", "Canadian Finance Tracker", TITLE_FONT)
     put(ws, "B2", "Import your bank and credit card exports, then read your month "
                   "here. Everything stays in this file - nothing is uploaded.", SUB_FONT)
-    ws.row_dimensions[3].height = 22
-    ws.row_dimensions[4].height = 22
+    # Rows 3-5 carry the two rows of macro buttons (2 x 26pt plus a 6pt
+    # gap = 58pt from the top of B3); 70pt keeps them clear of row 6.
+    ws.row_dimensions[3].height = 24
+    ws.row_dimensions[4].height = 24
+    ws.row_dimensions[5].height = 22
 
     put(ws, "B6", "Report month", BOLD)
     put(ws, "C6", opening_month, LABEL_FONT, align="center",
@@ -546,8 +550,11 @@ def build_transactions(wb: Workbook, records: Sequence[sample.Txn]):
     put(ws, "B2", "One row per transaction. Money out is negative, money in is "
                   "positive. Grey columns are calculated - type in the white ones.",
         SUB_FONT)
-    ws.row_dimensions[3].height = 22
-    ws.row_dimensions[4].height = 22
+    # Rows 3-5 carry the two rows of macro buttons (2 x 26pt plus a 6pt
+    # gap = 58pt from the top of B3); 70pt keeps them clear of row 6.
+    ws.row_dimensions[3].height = 24
+    ws.row_dimensions[4].height = 24
+    ws.row_dimensions[5].height = 22
 
     header_row = TXN_FIRST_ROW
     table_header(ws, header_row, TXN_HEADERS)
@@ -1064,6 +1071,8 @@ def build_household(wb: Workbook):
         f'tblTxn[Type],"Expense",tblTxn[Paid By],PersonA)+SUMIFS(tblTxn[Share A],'
         f'tblTxn[Month],{year_criteria},tblTxn[Type],"Expense",tblTxn[Paid By],PersonB)',
         BOLD, fmt=MONEY, align="right")
+    # The other person's balance is the mirror image, as on the monthly row.
+    put(ws, "D24", "=-C24", BOLD, fmt=MONEY, align="right")
 
     put(ws, "G5", "How the split works", BOLD)
     put(ws, "G6",
@@ -1264,7 +1273,7 @@ SETTINGS_ROWS = [
     ("Skip duplicates on import", "Yes",
      "Re-importing an overlapping statement adds only the new rows."),
     ("Currency", "CAD", "Everything is treated as Canadian dollars."),
-    ("Version", "1.0.0", "Workbook version."),
+    ("Version", APP_VERSION, "Workbook version."),
 ]
 
 

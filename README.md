@@ -377,7 +377,7 @@ pip install -r requirements-dev.txt
 python3 -m unittest discover -s tests -t .
 ```
 
-125 tests, about 15 seconds. They fall into six groups:
+128 tests, about 15 seconds. They fall into six groups:
 
 - **Format conformance** (`test_ovba.py`) — the compression and encryption
   vectors from [MS-OVBA] §3.2 and §2.3.1.15–17, so the writer is checked
@@ -415,8 +415,9 @@ python3 -m unittest discover -s tests -t .
   compiles this code and it is not available here, so these tests stand in for
   the compiler. Every qualified and unqualified call must resolve to a public
   procedure taking that many arguments, every constant and class member must
-  exist, and the sheet, table, column and named-range constants must be the
-  ones the builder actually writes.
+  exist, the sheet, table, column and named-range constants must be the ones
+  the builder actually writes, and every macro a button or shortcut names must
+  be a public parameterless Sub with room on the sheet for the button bar.
 
 LibreOffice is doing real work here: it is a completely separate implementation
 of both OOXML and the Basic dialect VBA is derived from, so agreeing with it is
