@@ -33,8 +33,21 @@ Public Function AddRows(ByVal lo As ListObject, ByVal count As Long) As Long
 
     ApplyTemplates lo, firstNew, count
     ApplyFormats lo, firstNew, count
+    SyncPrintArea lo
     AddRows = firstNew
 End Function
+
+' The ledger is formatted thousands of rows past the ones in use, so with no
+' print area Excel offers to print all of it.  The area is set when the
+' workbook is built, out to the Type column, and has to follow the table down
+' from there as rows arrive.
+Public Sub SyncPrintArea(ByVal lo As ListObject)
+    Dim corner As Range
+    On Error Resume Next
+    Set corner = lo.Range.Cells(lo.Range.Rows.Count, modUtil.ColumnIndex(lo, COL_TYPE))
+    lo.Parent.PageSetup.PrintArea = "$B$1:" & corner.Address
+    On Error GoTo 0
+End Sub
 
 Public Function IsRowBlank(ByVal lo As ListObject, ByVal rowIndex As Long) As Boolean
     Dim dateCell As Range, amountCell As Range

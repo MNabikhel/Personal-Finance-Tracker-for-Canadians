@@ -129,6 +129,7 @@ Public Sub ClearAllTransactions(Optional ByVal confirm As Boolean = True)
         lo.DataBodyRange.Rows(1).ClearContents
         modLedger.ApplyTemplates lo, 1, 1
     End If
+    modLedger.SyncPrintArea lo
 
     On Error Resume Next
     Set logTable = modUtil.Tbl(SH_LOG, TBL_LOG)

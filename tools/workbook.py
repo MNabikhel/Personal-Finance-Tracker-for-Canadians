@@ -18,6 +18,7 @@ from openpyxl.formatting.rule import (CellIsRule, ColorScaleRule, DataBarRule,
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.workbook.defined_name import DefinedName
@@ -246,6 +247,20 @@ def widths(ws: Worksheet, mapping: dict):
         ws.column_dimensions[letter].width = width
 
 
+def table_header(ws: Worksheet, row: int, headers: Iterable[str]):
+    """Writes a table's header row.
+
+    Excel paints the band behind it from the table style, but nothing else
+    does - not the print preview of another program, not a viewer - and white
+    text on a band that was never painted cannot be read.  So it is painted
+    here too.
+    """
+    for index, header in enumerate(headers):
+        cell = ws.cell(row=row, column=2 + index, value=header)
+        cell.font = Font(bold=True, color=WHITE)
+        cell.fill = HEAD_FILL
+
+
 def add_table(ws: Worksheet, name: str, ref: str, style: str = "TableStyleMedium3"):
     table = Table(displayName=name, ref=ref)
     table.tableStyleInfo = TableStyleInfo(
@@ -275,6 +290,27 @@ def name(wb: Workbook, key: str, refers_to: str):
 
 def quoted(sheet_name: str) -> str:
     return f"'{sheet_name}'" if " " in sheet_name else sheet_name
+
+
+def printing(ws: Worksheet, area: str = None, landscape: bool = False,
+             titles: str = None):
+    """Makes the sheet fit the paper it is printed on.
+
+    One page wide, as many pages long as it takes, with the header row on each.
+    An area is needed wherever the builder has formatted rows ahead of the
+    transactions that will fill them: those count as used, and printing the
+    used range then means hundreds of empty pages.  Where the sheet only grows
+    as it is written to, the used range is already right.
+    """
+    if area:
+        ws.print_area = area
+    ws.page_setup.orientation = "landscape" if landscape else "portrait"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+    ws.print_options.horizontalCentered = True
+    if titles:
+        ws.print_title_rows = titles
 
 
 # ---------------------------------------------------------------------------
@@ -481,6 +517,9 @@ def build_dashboard(wb: Workbook, opening_month: str):
     ws.merge_cells(f"B{row + 6}:I{row + 8}")
 
     ws.freeze_panes = "B7"
+    # The charts live out in column K and are far too wide to print beside the
+    # figures, so the printed Dashboard is the figures.
+    printing(ws, f"B1:I{DASH_COUPLE_LAST}")
 
     # Anchors used by the macros.
     ws["B3"].value = None
@@ -505,9 +544,7 @@ def build_transactions(wb: Workbook, records: Sequence[sample.Txn]):
     ws.row_dimensions[4].height = 22
 
     header_row = TXN_FIRST_ROW
-    for index, header in enumerate(TXN_HEADERS):
-        cell = ws.cell(row=header_row, column=2 + index, value=header)
-        cell.font = Font(bold=True, color=WHITE)
+    table_header(ws, header_row, TXN_HEADERS)
 
     for offset, record in enumerate(records):
         row = header_row + 1 + offset
@@ -554,6 +591,11 @@ def build_transactions(wb: Workbook, records: Sequence[sample.Txn]):
     )
 
     ws.freeze_panes = f"D{header_row + 1}"
+    # A printed ledger is the story of the money, not the bookkeeping, so it
+    # stops at Type and leaves out the shares, the match keys and the rest.
+    # modLedger.SyncPrintArea moves the bottom edge as rows are imported.
+    printing(ws, f"{first_letter}1:{col_of('Type')}{last_row}", landscape=True,
+             titles=f"{header_row}:{header_row}")
 
 
 def write_ledger_row(ws: Worksheet, row: int, sequence: int, record: sample.Txn):
@@ -604,8 +646,7 @@ def build_accounts(wb: Workbook):
 
     headers = ["Account", "Institution", "Type", "Owner", "Bank Format",
                "File Name Contains", "Include in Household", "Notes"]
-    for index, header in enumerate(headers):
-        ws.cell(row=4, column=2 + index, value=header).font = Font(bold=True, color=WHITE)
+    table_header(ws, 4, headers)
 
     rows = [
         (sample.ACCOUNT_ALEX, "RBC Royal Bank", "Chequing", sample.PERSON_A,
@@ -627,6 +668,7 @@ def build_accounts(wb: Workbook):
 
     add_table(ws, "tblAccounts", f"B4:I{4 + len(rows)}")
     ws.freeze_panes = "B5"
+    printing(ws, f"B1:I{4 + len(rows)}", landscape=True, titles="4:4")
 
 
 def build_categories(wb: Workbook):
@@ -642,8 +684,7 @@ def build_categories(wb: Workbook):
                   "rules categorise a row, and \"Joint Split A\" overrides the "
                   "household split for one category.", SUB_FONT)
 
-    for index, header in enumerate(data.CATEGORY_COLUMNS):
-        ws.cell(row=4, column=2 + index, value=header).font = Font(bold=True, color=WHITE)
+    table_header(ws, 4, data.CATEGORY_COLUMNS)
 
     for offset, entry in enumerate(data.CATEGORIES):
         category, group, kind, essential, tag, budget, notes = entry
@@ -663,6 +704,7 @@ def build_categories(wb: Workbook):
     last = 4 + len(data.CATEGORIES)
     add_table(ws, "tblCategories", f"B4:J{last}")
     ws.freeze_panes = "B5"
+    printing(ws, f"B1:J{last}", landscape=True, titles="4:4")
 
 
 def build_rules(wb: Workbook):
@@ -676,8 +718,7 @@ def build_rules(wb: Workbook):
                   "wins. The Teach a rule button on the Transactions sheet adds new "
                   "ones at priority 10.", SUB_FONT)
 
-    for index, header in enumerate(data.RULE_COLUMNS):
-        ws.cell(row=4, column=2 + index, value=header).font = Font(bold=True, color=WHITE)
+    table_header(ws, 4, data.RULE_COLUMNS)
 
     rules = data.seed_rules()
     for offset, rule in enumerate(rules):
@@ -690,6 +731,7 @@ def build_rules(wb: Workbook):
     last = 4 + len(rules)
     add_table(ws, "tblRules", f"B4:M{last}")
     ws.freeze_panes = "B5"
+    printing(ws, f"B1:M{last}", landscape=True, titles="4:4")
 
 
 def build_formats(wb: Workbook):
@@ -704,8 +746,7 @@ def build_formats(wb: Workbook):
                   "needed. Rows that cannot be read as a date (headers, notices) are "
                   "skipped automatically.", SUB_FONT)
 
-    for index, header in enumerate(data.FORMAT_COLUMNS):
-        ws.cell(row=4, column=2 + index, value=header).font = Font(bold=True, color=WHITE)
+    table_header(ws, 4, data.FORMAT_COLUMNS)
 
     for offset, row_values in enumerate(data.BANK_FORMATS):
         for index, value in enumerate(row_values):
@@ -714,6 +755,7 @@ def build_formats(wb: Workbook):
     last = 4 + len(data.BANK_FORMATS)
     add_table(ws, "tblFormats", f"B4:N{last}")
     ws.freeze_panes = "B5"
+    printing(ws, f"B1:N{last}", landscape=True, titles="4:4")
 
 
 def build_log(wb: Workbook):
@@ -727,12 +769,12 @@ def build_log(wb: Workbook):
 
     headers = ["When", "Batch", "File", "Format", "Account", "Rows read",
                "Imported", "Duplicates", "Unreadable"]
-    for index, header in enumerate(headers):
-        ws.cell(row=4, column=2 + index, value=header).font = Font(bold=True, color=WHITE)
+    table_header(ws, 4, headers)
     ws.cell(row=5, column=2, value=None)
 
     add_table(ws, "tblLog", "B4:J5")
     ws.freeze_panes = "B5"
+    printing(ws, landscape=True, titles="4:4")
 
 
 # --- Reports ----------------------------------------------------------------
@@ -848,6 +890,8 @@ def build_reports(wb: Workbook):
             BOLD, fmt=MONEY, align="right")
 
     ws.freeze_panes = f"{get_column_letter(REPORT_FIRST_COL)}{header_row + 1}"
+    printing(ws, f"B1:{total_col}{category_head + REPORT_CATEGORY_ROWS}",
+             landscape=True, titles=f"{header_row}:{header_row}")
 
 
 # --- Budget -----------------------------------------------------------------
@@ -896,9 +940,11 @@ def build_budget(wb: Workbook):
         put(ws, f"F{row}",
             f'=IF($B{row}="","",SUMIFS(tblTxn[View Amount],tblTxn[Month],'
             f'ReportMonth,tblTxn[Category],$B{row})*$K{row})', fmt=MONEY)
+        # Nothing is over a budget that was never set, so the column stays
+        # empty until there is one - the same rule the Dashboard KPI follows.
         put(ws, f"G{row}",
-            f'=IF($B{row}="","",IF($D{row}="Income",F{row}-E{row},E{row}-F{row}))',
-            fmt=MONEY)
+            f'=IF(N(E{row})=0,"",IF($D{row}="Income",F{row}-E{row},'
+            f'E{row}-F{row}))', fmt=MONEY)
         put(ws, f"H{row}", f'=IF(N(E{row})=0,"",F{row}/E{row})', fmt=PERCENT)
         put(ws, f"I{row}",
             f'=IF($B{row}="","",SUMIFS(tblTxn[View Amount],tblTxn[Category],'
@@ -919,6 +965,7 @@ def build_budget(wb: Workbook):
                        end_type="num", end_value=1.5, end_color="FFC7CE"),
     )
     ws.freeze_panes = "B6"
+    printing(ws, f"B1:J{last}", landscape=True, titles="5:5")
 
 
 # --- Household --------------------------------------------------------------
@@ -1024,6 +1071,7 @@ def build_household(wb: Workbook):
         "Switch between household and per-person figures with the View selector on "
         "the Dashboard.", LABEL_FONT, wrap=True)
     ws.merge_cells("G6:G24")
+    printing(ws, "B1:G24", landscape=True)
 
 
 # --- Tax summary ------------------------------------------------------------
@@ -1070,6 +1118,7 @@ def build_tax(wb: Workbook):
         NOTE_FONT, wrap=True)
     ws.merge_cells(f"B{last + 2}:F{last + 4}")
     ws.freeze_panes = "B6"
+    printing(ws, f"B1:F{last + 4}", landscape=True, titles="5:5")
 
 
 # --- Registered plans -------------------------------------------------------
@@ -1188,6 +1237,7 @@ def build_registered(wb: Workbook):
                    "Confirm against canada.ca or your CRA account before you rely on "
                    "them.", NOTE_FONT, wrap=True)
     ws.merge_cells("K17:M20")
+    printing(ws, "B1:M27", landscape=True)
 
 
 # --- Settings ---------------------------------------------------------------
@@ -1236,6 +1286,7 @@ def build_settings(wb: Workbook, today: date):
         "anywhere. It only reads the CSV files you choose. Keep the file somewhere "
         "safe - it contains your complete spending history.", LABEL_FONT, wrap=True)
     ws.merge_cells(f"B{row + 1}:E{row + 3}")
+    printing(ws, f"B1:E{row + 3}")
 
 
 # --- Engine (hidden) --------------------------------------------------------
@@ -1410,6 +1461,7 @@ def build_help(wb: Workbook):
         "Not financial or tax advice. Figures published by the CRA were checked in "
         "September 2026; confirm anything that matters against canada.ca or your CRA "
         "account.", NOTE_FONT, wrap=True)
+    printing(ws, f"B1:C{row}")
 
 
 # --- Names, validation, charts ---------------------------------------------
