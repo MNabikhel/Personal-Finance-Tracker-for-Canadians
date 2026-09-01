@@ -1134,8 +1134,9 @@ PLANS = [
 def build_registered(wb: Workbook):
     ws = wb.create_sheet(SH_REGISTERED)
     ws.sheet_view.showGridLines = False
-    widths(ws, {"A": 2, "B": 18, "C": 16, "D": 16, "E": 15, "F": 4, "G": 16,
-                "H": 16, "I": 15, "J": 4, "K": 14, "L": 14, "M": 14})
+    # B has to hold "Not counted: owner is Joint", not just "RRSP".
+    widths(ws, {"A": 2, "B": 28, "C": 16, "D": 16, "E": 15, "F": 4, "G": 16,
+                "H": 16, "I": 15, "J": 4, "K": 24, "L": 14, "M": 14})
 
     put(ws, "B1", "Registered plans", TITLE_FONT)
     put(ws, "B2", "Contributions counted from the categories RRSP/TFSA/FHSA/RESP "
@@ -1237,7 +1238,7 @@ def build_registered(wb: Workbook):
                    "Confirm against canada.ca or your CRA account before you rely on "
                    "them.", NOTE_FONT, wrap=True)
     ws.merge_cells("K17:M20")
-    printing(ws, "B1:M27", landscape=True)
+    printing(ws, f"B1:M{15 + len(data.TFSA_LIMITS)}", landscape=True)
 
 
 # --- Settings ---------------------------------------------------------------
