@@ -186,8 +186,9 @@ The sample data is a couple's, so the file arrives in couple mode; the setup
 wizard asks which you are and switches the whole workbook to match. After that
 you can change your mind at any time with the *Couple mode on/off* button on
 the dashboard or the drop-down on the *Settings* sheet. Single mode only hides
-the per-person columns and the Household sheet — nothing is deleted, and going
-back and forth is safe.
+what needs two people — the per-person ledger columns, the Household sheet and
+the couple block on the dashboard. Nothing is deleted, and going back and forth
+is safe.
 
 With it on:
 
