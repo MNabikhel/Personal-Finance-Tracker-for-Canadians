@@ -1,4 +1,4 @@
-"""Turns an openpyxl workbook into a macro-enabled .xlsm with a VBA project.
+"""Serialises an openpyxl workbook as a reproducible package - plain or macro-enabled.
 
 openpyxl can only preserve a ``vbaProject.bin`` that it read from an existing
 file, so the workbook is saved as a normal package and the three things that
@@ -9,8 +9,9 @@ make a package macro-enabled are patched in afterwards:
    part - this is what makes Excel offer to enable macros;
 3. a relationship from the workbook part to the binary.
 
-Everything is written with fixed timestamps so two builds of the same source
-produce identical bytes.
+The plain ``.xlsx`` edition goes through the same re-packing without those
+patches, so that both editions are written with fixed timestamps and two
+builds of the same source produce identical bytes.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from __future__ import annotations
 import io
 import re
 import zipfile
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from openpyxl.workbook import Workbook
 
@@ -81,8 +82,7 @@ def _patch_core_properties(xml: str) -> str:
                         + match.group(3), xml)
 
 
-def to_xlsm(workbook: Workbook, vba_project: bytes) -> bytes:
-    """Serialise ``workbook`` as a macro-enabled package."""
+def _repack(workbook: Workbook, vba_project: Optional[bytes]) -> bytes:
     plain = io.BytesIO()
     workbook.save(plain)
     plain.seek(0)
@@ -91,9 +91,9 @@ def to_xlsm(workbook: Workbook, vba_project: bytes) -> bytes:
     with zipfile.ZipFile(plain) as source:
         for name in source.namelist():
             data = source.read(name)
-            if name == CONTENT_TYPES:
+            if name == CONTENT_TYPES and vba_project is not None:
                 data = _patch_content_types(data.decode("utf-8")).encode("utf-8")
-            elif name == WORKBOOK_RELS:
+            elif name == WORKBOOK_RELS and vba_project is not None:
                 data = _patch_workbook_rels(data.decode("utf-8")).encode("utf-8")
             elif name == CORE_PROPERTIES:
                 data = _patch_core_properties(data.decode("utf-8")).encode("utf-8")
@@ -101,7 +101,8 @@ def to_xlsm(workbook: Workbook, vba_project: bytes) -> bytes:
 
     if not any(name == WORKBOOK_RELS for name, _ in parts):
         raise PackageError(f"{WORKBOOK_RELS} is missing from the package")
-    parts.append((VBA_PART, vba_project))
+    if vba_project is not None:
+        parts.append((VBA_PART, vba_project))
 
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as target:
@@ -111,6 +112,16 @@ def to_xlsm(workbook: Workbook, vba_project: bytes) -> bytes:
             info.external_attr = 0o600 << 16
             target.writestr(info, data)
     return out.getvalue()
+
+
+def to_xlsm(workbook: Workbook, vba_project: bytes) -> bytes:
+    """Serialise ``workbook`` as a macro-enabled package."""
+    return _repack(workbook, vba_project)
+
+
+def to_xlsx(workbook: Workbook) -> bytes:
+    """Serialise ``workbook`` as a plain package, dated the same way."""
+    return _repack(workbook, None)
 
 
 def describe(package: bytes) -> Dict[str, object]:

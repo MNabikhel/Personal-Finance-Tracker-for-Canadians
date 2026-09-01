@@ -3,6 +3,13 @@
 The macros never invent numbers: every figure on the Dashboard, Reports, Budget,
 Tax Summary and Household sheets is a live worksheet formula, so the workbook is
 still readable with macros switched off.
+
+That is also what makes a second edition possible.  ``build(macros=False)``
+produces the plain "Excel Workbook" (.xlsx): the same sheets and reports, but
+with the columns the macros would have filled in - the transaction number, the
+category, the owner - written as formulas instead, so that a row typed in by
+hand is categorised the moment its description is in.  It has no importer and
+no buttons, and in exchange it opens anywhere a spreadsheet opens.
 """
 
 from __future__ import annotations
@@ -19,13 +26,14 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.properties import PageSetupProperties
-from openpyxl.worksheet.table import Table, TableStyleInfo
+from openpyxl.worksheet.table import Table, TableFormula, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.workbook.defined_name import DefinedName
 
 from . import data, sample
 
 APP_NAME = "Canadian Finance Tracker"       # matches modConst.APP_NAME
+APP_VERSION = "1.1.0"                       # matches modConst.APP_VERSION
 
 # --- Look and feel ----------------------------------------------------------
 
@@ -148,19 +156,22 @@ TXN_HIDDEN = ["View Amount"]
 # Plain references are used instead of [@Header] structured references on
 # purpose: they mean exactly the same thing to Excel, but they also evaluate in
 # LibreOffice Calc, which does not implement the [@...] form.
+#
+# Every one of them is blank on a row with no date, so that a row waiting to be
+# filled in looks empty rather than showing each lookup's fallback.
 TXN_FORMULAS = {
     "Month": 'IF(@{Date}="","",TEXT(@{Date},"yyyy-mm"))',
-    "Paid By": ('IFERROR(INDEX(tblAccounts[Owner],'
-                'MATCH(@{Account},tblAccounts[Account],0)),"Joint")'),
-    "Group": ('IFERROR(INDEX(tblCategories[Group],'
-              'MATCH(@{Category},tblCategories[Category],0)),"Other")'),
-    "Type": ('IFERROR(INDEX(tblCategories[Type],'
+    "Paid By": ('IF(@{Date}="","",IFERROR(INDEX(tblAccounts[Owner],'
+                'MATCH(@{Account},tblAccounts[Account],0)),"Joint"))'),
+    "Group": ('IF(@{Date}="","",IFERROR(INDEX(tblCategories[Group],'
+              'MATCH(@{Category},tblCategories[Category],0)),"Other"))'),
+    "Type": ('IF(@{Date}="","",IFERROR(INDEX(tblCategories[Type],'
              'MATCH(@{Category},tblCategories[Category],0)),'
-             'IF(@{Amount}>0,"Income","Expense"))'),
-    "Essential": ('IFERROR(INDEX(tblCategories[Essential],'
-                  'MATCH(@{Category},tblCategories[Category],0)),"No")'),
-    "Tax Tag": ('IFERROR(INDEX(tblCategories[Tax Tag],'
-                'MATCH(@{Category},tblCategories[Category],0)),"")'),
+             'IF(@{Amount}>0,"Income","Expense")))'),
+    "Essential": ('IF(@{Date}="","",IFERROR(INDEX(tblCategories[Essential],'
+                  'MATCH(@{Category},tblCategories[Category],0)),"No"))'),
+    "Tax Tag": ('IF(@{Date}="","",IFERROR(INDEX(tblCategories[Tax Tag],'
+                'MATCH(@{Category},tblCategories[Category],0)),""))'),
     "Split A %": (
         'IF(@{Date}="","",IF(@{Owner}=PersonA,1,IF(@{Owner}=PersonB,0,'
         'IFERROR(INDEX(tblCategories[Joint Split A],'
@@ -179,8 +190,75 @@ TXN_FORMULAS = {
 # The column every report adds up: the amount, or one person's share of it.
 VIEW = "tblTxn[View Amount]"
 
+# Whether a rule on the Rules sheet claims this row.  One 0/1 per rule, in the
+# order the rules are listed, evaluated as an array inside SUMPRODUCT below.
+#
+# It follows clsRule.Matches as far as a formula can: a disabled rule, a blank
+# pattern or a blank category never match; "Money in"/"Money out" is honoured;
+# an Account rule is tested against the account; a Word rule needs the pattern
+# to stand on its own (approximated with spaces, where the macro checks for
+# letters and digits); everything else is Contains.  Starts With, Ends With,
+# Equals and Like are all treated as Contains, and there is no cleaned-up
+# merchant name here, so Merchant rules are tested against the description.
+_RULE_CLAIMS = (
+    '(tblRules[Enabled]<>"No")*(tblRules[Pattern]<>"")*(tblRules[Category]<>"")'
+    '*((tblRules[Flow]="Any")+(tblRules[Flow]="")'
+    '+((tblRules[Flow]="Money out")*(@{Amount}<0))'
+    '+((tblRules[Flow]="Money in")*(@{Amount}>0)))'
+    '*(((tblRules[Look In]="Account")*ISNUMBER(SEARCH(tblRules[Pattern],@{Account})))'
+    '+((tblRules[Look In]<>"Account")'
+    '*(((tblRules[Test]="Word")'
+    '*ISNUMBER(SEARCH(" "&tblRules[Pattern]&" "," "&@{Description}&" ")))'
+    '+((tblRules[Test]<>"Word")*ISNUMBER(SEARCH(tblRules[Pattern],@{Description}))))))'
+)
+
+# The row number, on the Rules sheet, of the first rule that claims this
+# transaction.  Rules are kept in priority order, so the first is the winner -
+# the same "lowest priority number wins" the macros apply.  A rule that does
+# not claim the row is pushed a billion rows down and so never the minimum;
+# when none claims it, INDEX is asked for a row it does not have and IFERROR
+# turns that into Uncategorized.  SUMPRODUCT is there only to make MIN see the
+# whole array: it is the one way to get array evaluation out of every version
+# of Excel and out of LibreOffice without entering an array formula.
+_FIRST_RULE = ('SUMPRODUCT(MIN((1-(' + _RULE_CLAIMS + '>0))*1E+9'
+               '+ROW(tblRules[Pattern])))-ROW(tblRules[[#Headers],[Pattern]])')
+
+_CATEGORY_LOOKUP = 'INDEX(tblCategories[{column}],MATCH(@{{Category}},tblCategories[Category],0))'
+
+# The columns the macros fill in when they import, written as formulas for the
+# edition without macros.  A row typed by hand then gets a number, a category
+# and an owner the moment its description and amount are in - and any of them
+# can be typed over, which is exactly how a category is corrected.
+MANUAL_FORMULAS = {
+    "Txn ID": ('IF(@{Date}="","","T"&TEXT(ROW()-ROW(tblTxn[[#Headers],[Txn ID]]),'
+               '"000000"))'),
+    "Merchant": 'IF(@{Description}="","",@{Description})',
+    "Category": ('IF(@{Description}="","",IFERROR(INDEX(tblRules[Category],'
+                 + _FIRST_RULE + '),"Uncategorized"))'),
+    # Whose expense it is: the category's default owner if it names one (the
+    # household's groceries, whoever's card paid), otherwise whoever paid.
+    # Single mode has one owner, so there it is simply whoever paid.
+    "Owner": ('IF(@{Date}="","",IF(HouseholdMode="Couple",IFERROR(IF('
+              + _CATEGORY_LOOKUP.format(column="Default Owner") + '="",@{Paid By},'
+              + _CATEGORY_LOOKUP.format(column="Default Owner") + '),@{Paid By}),'
+              '@{Paid By}))'),
+    # Typing over the Category formula is how a row is corrected by hand, and
+    # this is how the row says so.  ISFORMULA arrived in Excel 2013, and the
+    # file format stores every function newer than 2007 under an _xlfn. prefix
+    # - without it Excel shows #NAME? until the cell is re-entered by hand.
+    "Tagged By": ('IF(@{Date}="","",IFERROR(IF(_xlfn.ISFORMULA(@{Category}),"Rule",'
+                  '"Manual"),""))'),
+}
+
 TXN_FIRST_ROW = 6          # header row of tblTxn
 LEDGER_CAPACITY = 20000    # rows covered by validation and formatting
+# Rows set up and waiting below the sample data in the edition without
+# macros, so that entering a transaction is typing into a row, not building one.
+READY_ROWS = 200
+
+# Import bookkeeping - meaningless without an importer, so the edition without
+# macros hides it as well.
+IMPORT_COLUMNS = ["Source File", "Batch", "Match Key"]
 
 PLACEHOLDER = re.compile(r"@\{([^}]+)\}")
 
@@ -194,11 +272,18 @@ def col_number(header: str) -> int:
     return 2 + TXN_HEADERS.index(header)
 
 
-def formula_a1(header: str, row: int) -> str:
+def formula_a1(header: str, row: int, formulas: dict = TXN_FORMULAS) -> str:
     """A calculated column's formula as it appears on one ledger row."""
     def swap(match):
         return f"${col_of(match.group(1))}{row}"
-    return "=" + PLACEHOLDER.sub(swap, TXN_FORMULAS[header])
+    return "=" + PLACEHOLDER.sub(swap, formulas[header])
+
+
+def ledger_formulas(macros: bool) -> dict:
+    """The calculated columns of the ledger, for one edition or the other."""
+    if macros:
+        return dict(TXN_FORMULAS)
+    return {**TXN_FORMULAS, **MANUAL_FORMULAS}
 
 
 def formula_r1c1(header: str) -> str:
@@ -323,7 +408,12 @@ def report_month(today: date) -> str:
     return (today.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
 
 
-def build(today: Optional[date] = None) -> Workbook:
+def build(today: Optional[date] = None, macros: bool = True) -> Workbook:
+    """The workbook body.
+
+    With ``macros`` the result is the body of the macro-enabled edition, ready
+    for its VBA project; without, it is the complete plain-workbook edition.
+    """
     today = today or date.today()
     records = sample.build(today)
 
@@ -336,26 +426,34 @@ def build(today: Optional[date] = None) -> Workbook:
     wb.properties.creator = APP_NAME
     wb.properties.lastModifiedBy = APP_NAME
     wb.properties.title = APP_NAME
-    wb.properties.description = (
-        "Personal finance tracker for Canadian households. Import your bank and "
-        "credit card CSV exports and read your income and expenses by month.")
+    if macros:
+        wb.properties.description = (
+            "Personal finance tracker for Canadian households. Import your bank "
+            "and credit card CSV exports and read your income and expenses by "
+            "month.")
+    else:
+        wb.properties.description = (
+            "Personal finance tracker for Canadian households. Type in your "
+            "transactions and read your income and expenses by month. This is "
+            "the edition without macros.")
     wb.properties.created = datetime.combine(today, time())
     wb.properties.modified = wb.properties.created
 
-    build_dashboard(wb, report_month(today))
-    build_transactions(wb, records)
-    build_accounts(wb)
+    build_dashboard(wb, report_month(today), macros)
+    build_transactions(wb, records, macros)
+    build_accounts(wb, macros)
     build_categories(wb)
-    build_rules(wb)
+    build_rules(wb, macros)
     build_budget(wb)
     build_reports(wb)
     build_household(wb)
     build_tax(wb)
-    build_registered(wb)
-    build_formats(wb)
-    build_log(wb)
-    build_settings(wb, today)
-    build_help(wb)
+    build_registered(wb, macros)
+    if macros:
+        build_formats(wb)
+        build_log(wb)
+    build_settings(wb, today, macros)
+    build_help(wb, macros)
     build_engine(wb)
 
     add_names(wb)
@@ -363,6 +461,8 @@ def build(today: Optional[date] = None) -> Workbook:
     add_charts(wb)
 
     for sheet_name, code_name in CODE_NAMES.items():
+        if sheet_name not in wb.sheetnames:
+            continue
         ws = wb[sheet_name]
         ws.sheet_properties.codeName = code_name
         if sheet_name in TAB_COLOURS:
@@ -403,7 +503,7 @@ DASH_KPIS_RIGHT = [
 ]
 
 
-def build_dashboard(wb: Workbook, opening_month: str):
+def build_dashboard(wb: Workbook, opening_month: str, macros: bool = True):
     ws = wb.create_sheet(SH_DASHBOARD)
     ws.sheet_view.showGridLines = False
     widths(ws, {"A": 2, "B": 26, "C": 15, "D": 2, "E": 26, "F": 15, "G": 2,
@@ -413,8 +513,14 @@ def build_dashboard(wb: Workbook, opening_month: str):
 
     ws.row_dimensions[1].height = 28
     put(ws, "B1", "Canadian Finance Tracker", TITLE_FONT)
-    put(ws, "B2", "Import your bank and credit card exports, then read your month "
-                  "here. Everything stays in this file - nothing is uploaded.", SUB_FONT)
+    if macros:
+        put(ws, "B2", "Import your bank and credit card exports, then read your "
+                      "month here. Everything stays in this file - nothing is "
+                      "uploaded.", SUB_FONT)
+    else:
+        put(ws, "B2", "Type your transactions on the Transactions sheet, then read "
+                      "your month here. Everything stays in this file - nothing is "
+                      "uploaded.", SUB_FONT)
     ws.row_dimensions[3].height = 22
     ws.row_dimensions[4].height = 22
 
@@ -438,8 +544,13 @@ def build_dashboard(wb: Workbook, opening_month: str):
         put(ws, f"E{row}", label, LABEL_FONT)
         put(ws, f"F{row}", "=" + formula, KPI_FONT, fmt=fmt, align="right")
 
-    put(ws, "H9", "Uncategorized rows distort every number on this page. "
-                  "Use the button above to clear them.", NOTE_FONT, wrap=True)
+    if macros:
+        put(ws, "H9", "Uncategorized rows distort every number on this page. "
+                      "Use the button above to clear them.", NOTE_FONT, wrap=True)
+    else:
+        put(ws, "H9", "Uncategorized rows distort every number on this page. "
+                      "Filter the Transactions sheet to them and pick a category "
+                      "from the drop-down.", NOTE_FONT, wrap=True)
     ws.merge_cells("H9:I13")
 
     section(ws, DASH_GROUPS_HEAD - 1, "B", "I", "Where the money went")
@@ -464,15 +575,46 @@ def build_dashboard(wb: Workbook, opening_month: str):
     )
 
     merchants_top = DASH_MERCHANTS_TOP
-    section(ws, merchants_top, "B", "I", "Biggest merchants this month")
-    put(ws, f"B{merchants_top + 1}", "Merchant", BOLD)
-    put(ws, f"C{merchants_top + 1}", "Spent", BOLD, align="right")
-    for row in range(merchants_top + 2, merchants_top + 12):
-        ws[f"C{row}"].number_format = MONEY
-    put(ws, f"E{merchants_top + 2}",
-        "This list is written by the Refresh button (it needs macros).",
-        NOTE_FONT, wrap=True)
-    ws.merge_cells(f"E{merchants_top + 2}:I{merchants_top + 4}")
+    if macros:
+        section(ws, merchants_top, "B", "I", "Biggest merchants this month")
+        put(ws, f"B{merchants_top + 1}", "Merchant", BOLD)
+        put(ws, f"C{merchants_top + 1}", "Spent", BOLD, align="right")
+        for row in range(merchants_top + 2, merchants_top + 12):
+            ws[f"C{row}"].number_format = MONEY
+        put(ws, f"E{merchants_top + 2}",
+            "This list is written by the Refresh button (it needs macros).",
+            NOTE_FONT, wrap=True)
+        ws.merge_cells(f"E{merchants_top + 2}:I{merchants_top + 4}")
+    else:
+        # No macro to write a merchant list here, and no cleaned-up merchant
+        # names for it to count, so this edition ranks the categories instead -
+        # by formula, off the Reports sheet's column for the report month.
+        section(ws, merchants_top, "B", "I", "Biggest categories this month")
+        put(ws, f"B{merchants_top + 1}", "Category", BOLD)
+        put(ws, f"C{merchants_top + 1}", "Spent or saved", BOLD, align="right")
+        put(ws, f"E{merchants_top + 1}", "Share of the month", BOLD, align="right")
+        reports = quoted(SH_REPORTS)
+        first, last = REPORT_CATEGORY_FIRST, REPORT_CATEGORY_LAST
+        rank = f"{reports}!${REPORT_RANK_COL}${first}:${REPORT_RANK_COL}${last}"
+        labels = f"{reports}!$B${first}:$B${last}"
+        amounts = (f"{reports}!${REPORT_MONTH_COL}${first}"
+                   f":${REPORT_MONTH_COL}${last}")
+        for place in range(1, 11):
+            row = merchants_top + 1 + place
+            found = f"MATCH(LARGE({rank},{place}),{rank},0)"
+            put(ws, f"B{row}",
+                f'=IFERROR(IF(LARGE({rank},{place})<0,"",INDEX({labels},{found})),"")',
+                LABEL_FONT)
+            put(ws, f"C{row}",
+                f'=IFERROR(IF(LARGE({rank},{place})<0,"",INDEX({amounts},{found})),"")',
+                fmt=MONEY, align="right")
+            put(ws, f"E{row}", f'=IFERROR(IF(C{row}="","",C{row}/(C10+C11)),"")',
+                fmt=PERCENT, align="right")
+        put(ws, f"H{merchants_top + 2}",
+            "Spending and saving categories, ranked. The share is of everything "
+            "that left this month: money out plus money saved.",
+            NOTE_FONT, wrap=True)
+        ws.merge_cells(f"H{merchants_top + 2}:I{merchants_top + 6}")
 
     couple_top = DASH_COUPLE_TOP
     section(ws, couple_top, "B", "I", "Couple view (selected month)")
@@ -521,15 +663,14 @@ def build_dashboard(wb: Workbook, opening_month: str):
     # figures, so the printed Dashboard is the figures.
     printing(ws, f"B1:I{DASH_COUPLE_LAST}")
 
-    # Anchors used by the macros.
+    # Anchor for the button bar the macros draw.
     ws["B3"].value = None
-    ws["B33"].value = None
 
 
 # --- Transactions -----------------------------------------------------------
 
 
-def build_transactions(wb: Workbook, records: Sequence[sample.Txn]):
+def build_transactions(wb: Workbook, records: Sequence[sample.Txn], macros: bool = True):
     ws = wb.create_sheet(SH_TXN)
     ws.sheet_view.showGridLines = False
     ws.column_dimensions["A"].width = 2
@@ -537,25 +678,49 @@ def build_transactions(wb: Workbook, records: Sequence[sample.Txn]):
         ws.column_dimensions[col_of(header)].width = width
 
     put(ws, "B1", "Transactions", TITLE_FONT)
-    put(ws, "B2", "One row per transaction. Money out is negative, money in is "
-                  "positive. Grey columns are calculated - type in the white ones.",
-        SUB_FONT)
+    if macros:
+        put(ws, "B2", "One row per transaction. Money out is negative, money in is "
+                      "positive. Grey columns are calculated - type in the white "
+                      "ones.", SUB_FONT)
+    else:
+        put(ws, "B2", "One row per transaction. Money out is negative, money in is "
+                      "positive. Type the Date, Account, Description and Amount; "
+                      "everything else fills itself in, and can be typed over.",
+            SUB_FONT)
     ws.row_dimensions[3].height = 22
     ws.row_dimensions[4].height = 22
 
     header_row = TXN_FIRST_ROW
     table_header(ws, header_row, TXN_HEADERS)
+    formulas = ledger_formulas(macros)
 
     for offset, record in enumerate(records):
         row = header_row + 1 + offset
-        write_ledger_row(ws, row, offset + 1, record)
-    if not records:
-        write_blank_ledger_row(ws, header_row + 1)
+        write_ledger_row(ws, row, offset + 1, record, formulas)
+    # Without an importer, rows arrive by being typed, so a stock of them is
+    # waiting with their formulas in place.  With one, a single blank row only
+    # ever stands in for an empty ledger.
+    ready = READY_ROWS if not macros else (0 if records else 1)
+    for offset in range(ready):
+        write_blank_ledger_row(ws, header_row + 1 + len(records) + offset, formulas)
 
-    last_row = header_row + max(len(records), 1)
+    last_row = header_row + len(records) + ready
     first_letter = col_of(TXN_HEADERS[0])
     last_letter = col_of(TXN_HEADERS[-1])
-    add_table(ws, "tblTxn", f"{first_letter}{header_row}:{last_letter}{last_row}")
+    table = add_table(ws, "tblTxn",
+                      f"{first_letter}{header_row}:{last_letter}{last_row}")
+    if not macros:
+        # Tells Excel these are calculated columns, so a row typed under the
+        # table gets them filled in as the table grows to take it.  The macros
+        # write their own formulas onto rows they add, so the other edition
+        # does not need this.  (openpyxl only names the columns itself when
+        # none have been set up, so they are all set up here.)
+        table._initialise_columns()
+        for column, header in zip(table.tableColumns, TXN_HEADERS):
+            column.name = header
+            if header in formulas:
+                column.calculatedColumnFormula = TableFormula(
+                    attr_text=formula_a1(header, header_row + 1, formulas)[1:])
 
     # Formatting for rows the macros will add later.
     for header, fmt in (("Date", DATE_FMT), ("Amount", MONEY), ("Share A", MONEY),
@@ -565,7 +730,7 @@ def build_transactions(wb: Workbook, records: Sequence[sample.Txn]):
         for row in range(header_row + 1, header_row + LEDGER_CAPACITY):
             ws[f"{letter}{row}"].number_format = fmt
 
-    for header in TXN_HIDDEN:
+    for header in TXN_HIDDEN + ([] if macros else IMPORT_COLUMNS):
         ws.column_dimensions[col_of(header)].hidden = True
 
     amount_letter = col_of("Amount")
@@ -598,7 +763,8 @@ def build_transactions(wb: Workbook, records: Sequence[sample.Txn]):
              titles=f"{header_row}:{header_row}")
 
 
-def write_ledger_row(ws: Worksheet, row: int, sequence: int, record: sample.Txn):
+def write_ledger_row(ws: Worksheet, row: int, sequence: int, record: sample.Txn,
+                     formulas: dict = TXN_FORMULAS):
     values = {
         "Txn ID": f"T{sequence:06d}",
         "Date": record.when,
@@ -616,33 +782,39 @@ def write_ledger_row(ws: Worksheet, row: int, sequence: int, record: sample.Txn)
     }
     for header in TXN_HEADERS:
         cell = ws.cell(row=row, column=col_number(header))
-        if header in TXN_FORMULAS:
-            cell.value = formula_a1(header, row)
+        if header in formulas:
+            cell.value = formula_a1(header, row, formulas)
         elif header in values:
             cell.value = values[header]
     ws.cell(row=row, column=col_number("Date")).number_format = DATE_FMT
     ws.cell(row=row, column=col_number("Amount")).number_format = MONEY
 
 
-def write_blank_ledger_row(ws: Worksheet, row: int):
+def write_blank_ledger_row(ws: Worksheet, row: int, formulas: dict = TXN_FORMULAS):
     for header in TXN_HEADERS:
-        if header in TXN_FORMULAS:
+        if header in formulas:
             ws.cell(row=row, column=col_number(header),
-                    value=formula_a1(header, row))
+                    value=formula_a1(header, row, formulas))
 
 
 # --- Reference sheets -------------------------------------------------------
 
 
-def build_accounts(wb: Workbook):
+def build_accounts(wb: Workbook, macros: bool = True):
     ws = wb.create_sheet(SH_ACCOUNTS)
     ws.sheet_view.showGridLines = False
     widths(ws, {"A": 2, "B": 26, "C": 20, "D": 14, "E": 14, "F": 28, "G": 24,
                 "H": 18, "I": 30})
 
     put(ws, "B1", "Accounts", TITLE_FONT)
-    put(ws, "B2", "One row per bank or card account. \"File Name Contains\" lets the "
-                  "importer recognise a download without asking.", SUB_FONT)
+    if macros:
+        put(ws, "B2", "One row per bank or card account. \"File Name Contains\" lets "
+                      "the importer recognise a download without asking.", SUB_FONT)
+    else:
+        put(ws, "B2", "One row per bank or card account. The Owner is who \"Paid By\" "
+                      "names when a transaction uses that account. Bank Format and "
+                      "File Name Contains are only used by the macro-enabled edition.",
+            SUB_FONT)
 
     headers = ["Account", "Institution", "Type", "Owner", "Bank Format",
                "File Name Contains", "Include in Household", "Notes"]
@@ -707,16 +879,23 @@ def build_categories(wb: Workbook):
     printing(ws, f"B1:J{last}", landscape=True, titles="4:4")
 
 
-def build_rules(wb: Workbook):
+def build_rules(wb: Workbook, macros: bool = True):
     ws = wb.create_sheet(SH_RULES)
     ws.sheet_view.showGridLines = False
     widths(ws, {"A": 2, "B": 9, "C": 9, "D": 13, "E": 13, "F": 32, "G": 12,
                 "H": 12, "I": 12, "J": 26, "K": 12, "L": 8, "M": 26})
 
     put(ws, "B1", "Rules", TITLE_FONT)
-    put(ws, "B2", "Rules run in Priority order, lowest first, and the first match "
-                  "wins. The Teach a rule button on the Transactions sheet adds new "
-                  "ones at priority 10.", SUB_FONT)
+    if macros:
+        put(ws, "B2", "Rules run in Priority order, lowest first, and the first "
+                      "match wins. The Teach a rule button on the Transactions sheet "
+                      "adds new ones at priority 10.", SUB_FONT)
+    else:
+        put(ws, "B2", "Rules run in Priority order, lowest first, and the first "
+                      "match wins. Add a row to teach a new one - the Category column "
+                      "on the Transactions sheet picks it up at once. This edition "
+                      "applies Contains and Word tests and the Flow; the pattern is "
+                      "looked for in the Description (or the Account).", SUB_FONT)
 
     table_header(ws, 4, data.RULE_COLUMNS)
 
@@ -782,6 +961,15 @@ def build_log(wb: Workbook):
 REPORT_MONTHS = 12
 REPORT_FIRST_COL = 3          # column C
 REPORT_CATEGORY_ROWS = 120
+REPORT_HEADER_ROW = 4
+
+# The column for the report month itself - the last of the twelve.
+REPORT_MONTH_COL = get_column_letter(REPORT_FIRST_COL + REPORT_MONTHS - 1)
+REPORT_TOTAL_COL = get_column_letter(REPORT_FIRST_COL + REPORT_MONTHS)
+# Hidden helpers: the sign that turns a category's amounts positive, and the
+# key the Dashboard ranks categories by.
+REPORT_SIGN_COL = get_column_letter(REPORT_FIRST_COL + REPORT_MONTHS + 1)
+REPORT_RANK_COL = get_column_letter(REPORT_FIRST_COL + REPORT_MONTHS + 2)
 
 CASHFLOW_ROWS = [
     ("Money in", '=SUMIFS(tblTxn[View Amount],tblTxn[Month],{month},tblTxn[Type],"Income")', MONEY),
@@ -794,6 +982,15 @@ CASHFLOW_ROWS = [
     ("Transactions", "=COUNTIFS(tblTxn[Month],{month})", "#,##0"),
 ]
 
+# Where the three blocks land, worked out once so the Dashboard and the charts
+# can address them.
+REPORT_GROUP_HEAD = REPORT_HEADER_ROW + 1 + len(CASHFLOW_ROWS) + 1
+REPORT_GROUP_FIRST = REPORT_GROUP_HEAD + 1
+REPORT_GROUP_LAST = REPORT_GROUP_FIRST + len(data.SPENDING_GROUPS) - 1
+REPORT_CATEGORY_HEAD = REPORT_GROUP_LAST + 2
+REPORT_CATEGORY_FIRST = REPORT_CATEGORY_HEAD + 1
+REPORT_CATEGORY_LAST = REPORT_CATEGORY_FIRST + REPORT_CATEGORY_ROWS - 1
+
 
 def build_reports(wb: Workbook):
     ws = wb.create_sheet(SH_REPORTS)
@@ -801,16 +998,17 @@ def build_reports(wb: Workbook):
     widths(ws, {"A": 2, "B": 30})
     for index in range(REPORT_MONTHS + 1):
         ws.column_dimensions[get_column_letter(REPORT_FIRST_COL + index)].width = 12
-    total_col = get_column_letter(REPORT_FIRST_COL + REPORT_MONTHS)
+    total_col = REPORT_TOTAL_COL
     ws.column_dimensions[total_col].width = 14
-    sign_col = get_column_letter(REPORT_FIRST_COL + REPORT_MONTHS + 1)
+    sign_col = REPORT_SIGN_COL
     ws.column_dimensions[sign_col].hidden = True
+    ws.column_dimensions[REPORT_RANK_COL].hidden = True
 
     put(ws, "B1", "Reports", TITLE_FONT)
     put(ws, "B2", "Twelve months ending with the report month chosen on the "
                   "Dashboard, in the same view (household or one person).", SUB_FONT)
 
-    header_row = 4
+    header_row = REPORT_HEADER_ROW
     put(ws, f"B{header_row}", "Month", Font(bold=True, color=WHITE))
     for index in range(REPORT_MONTHS):
         letter = get_column_letter(REPORT_FIRST_COL + index)
@@ -850,9 +1048,9 @@ def build_reports(wb: Workbook):
                 f"=SUM({first_letter}{row}:{last_letter}{row})", BOLD, fmt=fmt,
                 align="right")
 
-    group_head = first_row + len(CASHFLOW_ROWS) + 1
+    group_head = REPORT_GROUP_HEAD
     section(ws, group_head, "B", total_col, "Spending by group")
-    group_first = group_head + 1
+    group_first = REPORT_GROUP_FIRST
     for offset, group in enumerate(data.SPENDING_GROUPS):
         row = group_first + offset
         put(ws, f"B{row}", group, LABEL_FONT)
@@ -865,12 +1063,10 @@ def build_reports(wb: Workbook):
             f"=SUM({get_column_letter(REPORT_FIRST_COL)}{row}:"
             f"{get_column_letter(REPORT_FIRST_COL + REPORT_MONTHS - 1)}{row})",
             BOLD, fmt=MONEY, align="right")
-    group_last = group_first + len(data.SPENDING_GROUPS) - 1
-
-    category_head = group_last + 2
+    category_head = REPORT_CATEGORY_HEAD
     section(ws, category_head, "B", total_col, "By category (income positive, "
                                                "spending positive)")
-    category_first = category_head + 1
+    category_first = REPORT_CATEGORY_FIRST
     for offset in range(REPORT_CATEGORY_ROWS):
         row = category_first + offset
         put(ws, f"B{row}",
@@ -878,6 +1074,14 @@ def build_reports(wb: Workbook):
         put(ws, f"{sign_col}{row}",
             f'=IF($B{row}="",0,IFERROR(IF(INDEX(tblCategories[Type],'
             f'MATCH($B{row},tblCategories[Category],0))="Income",1,-1),-1))')
+        # What the Dashboard ranks by: the report month's figure for a category
+        # money went to, nudged by its row so that two equal amounts still
+        # rank as two different categories.  Income and empty rows sit at -1,
+        # below anything worth listing.
+        put(ws, f"{REPORT_RANK_COL}{row}",
+            f'=IF(AND($B{row}<>"",${sign_col}{row}<>1,'
+            f'N(${REPORT_MONTH_COL}{row})>0),'
+            f'${REPORT_MONTH_COL}{row}+ROW()/1E+7,-1)')
         for index in range(REPORT_MONTHS):
             letter = get_column_letter(REPORT_FIRST_COL + index)
             put(ws, f"{letter}{row}",
@@ -1131,7 +1335,7 @@ PLANS = [
 ]
 
 
-def build_registered(wb: Workbook):
+def build_registered(wb: Workbook, macros: bool = True):
     ws = wb.create_sheet(SH_REGISTERED)
     ws.sheet_view.showGridLines = False
     # B has to hold "Not counted: owner is Joint", not just "RRSP".
@@ -1186,8 +1390,10 @@ def build_registered(wb: Workbook):
         ), BOLD, fmt=MONEY, align="right")
     put(ws, "B11", "A registered plan always belongs to one person, so contributions "
                    "left with the Joint owner are not counted above. Set the Owner "
-                   "column on the Transactions sheet to whoever's plan it is - the "
-                   "\"Set owner\" button does it for a whole selection.",
+                   "column on the Transactions sheet to whoever's plan it is - "
+                   + ("the \"Set owner\" button does it for a whole selection."
+                      if macros else
+                      "pick the name from the drop-down in that column."),
         NOTE_FONT, wrap=True)
     ws.merge_cells("B11:I12")
 
@@ -1256,22 +1462,34 @@ SETTINGS_ROWS = [
     ("Skip duplicates on import", "Yes",
      "Re-importing an overlapping statement adds only the new rows."),
     ("Currency", "CAD", "Everything is treated as Canadian dollars."),
-    ("Version", "1.0.0", "Workbook version."),
+    ("Version", APP_VERSION, "Workbook version."),
 ]
 
+# The same rows, in the edition that has no wizard or importer to use them.
+SETTINGS_NOTES_WITHOUT_MACROS = {
+    "Setup completed": "Only used by the macro-enabled edition.",
+    "Transfer match window (days)": "Only used by the macro-enabled edition's importer.",
+    "Skip duplicates on import": "Only used by the macro-enabled edition's importer.",
+}
 
-def build_settings(wb: Workbook, today: date):
+
+def build_settings(wb: Workbook, today: date, macros: bool = True):
     ws = wb.create_sheet(SH_SETTINGS)
     ws.sheet_view.showGridLines = False
     widths(ws, {"A": 2, "B": 34, "C": 18, "D": 2, "E": 62})
 
     put(ws, "B1", "Settings", TITLE_FONT)
-    put(ws, "B2", "Change these here or run the setup wizard from the Dashboard.",
-        SUB_FONT)
+    if macros:
+        put(ws, "B2", "Change these here or run the setup wizard from the Dashboard.",
+            SUB_FONT)
+    else:
+        put(ws, "B2", "Change these here; the rest of the workbook follows.", SUB_FONT)
 
     section(ws, 4, "B", "E", "Household")
     for offset, (label, value, note) in enumerate(SETTINGS_ROWS):
         row = 5 + offset
+        if not macros:
+            note = SETTINGS_NOTES_WITHOUT_MACROS.get(label, note)
         put(ws, f"B{row}", label, LABEL_FONT)
         cell = put(ws, f"C{row}", value, Font(bold=True, color=INK), align="center",
                    fill=PatternFill("solid", fgColor="FFF3CD"))
@@ -1441,7 +1659,106 @@ HELP_SECTIONS = [
 ]
 
 
-def build_help(wb: Workbook):
+# The same workbook without its macros: transactions are typed in, and the
+# columns the importer would have filled are formulas.
+HELP_SECTIONS_WITHOUT_MACROS = [
+    ("Getting started", [
+        "This is the edition without macros: nothing to enable, and it opens in "
+        "Excel, Excel for the web and LibreOffice Calc alike. Transactions are typed "
+        "or pasted in rather than imported - importing CSV exports is what the "
+        "macro-enabled edition (the .xlsm file) is for.",
+        "1. Fill in the Settings sheet: household mode, your names, how joint costs "
+        "are split, and your province.",
+        "2. List your accounts on the Accounts sheet, one row per bank or card "
+        "account, each with an Owner. That is how the workbook knows who paid.",
+        "3. On the Transactions sheet, type a Date, Account, Description and Amount "
+        "into the first empty row. The rest of the row fills itself in: a number, "
+        "the month, a category, an owner and the shares.",
+        "4. When you are ready for your own data, select the sample rows - "
+        "everything above the first empty row - right-click, and choose Delete "
+        "Table Rows. Accounts, categories, rules and settings stay.",
+    ]),
+    ("Entering transactions", [
+        "Money out is negative and money in is positive: -54.20 for a purchase, "
+        "2465.18 for a pay cheque, whichever way your bank shows them.",
+        "Pick the Account from its drop-down. Paid By and Owner follow from it.",
+        "Two hundred ready rows wait below the sample data. When they run out, type "
+        "in the row directly under the table and Excel extends the table over it, "
+        "formulas included. In LibreOffice, copy the last row down first.",
+        "Sort or filter with the arrows in the header row. Rows do not have to be "
+        "in date order for any report to be right.",
+        "Pasting from a bank's CSV works one column at a time: dates into Date, "
+        "descriptions into Description, amounts into Amount.",
+    ]),
+    ("Categories and rules", [
+        "Category is a formula. It runs the Rules sheet against the description and "
+        "takes the first match in Priority order, lowest number first. Anything the "
+        "rules cannot place shows Uncategorized and the row is highlighted.",
+        "To correct a category, pick another from the drop-down. That replaces the "
+        "formula on that row, Tagged By reads Manual, and the row is never touched "
+        "again. To hand it back to the rules, copy the Category cell from any other "
+        "row.",
+        "To teach a rule, add a row to the Rules sheet: the text to look for, Money "
+        "in or Money out, and the category. Every row whose description contains "
+        "that text picks it up at once.",
+        "The rules here apply Contains and Word (the pattern on its own, not inside "
+        "another word) and the Flow. Starts With, Ends With, Equals and Like are "
+        "treated as Contains, amount limits and Set Owner are not applied, and "
+        "Merchant rules are matched against the description, since there is no "
+        "cleaned-up merchant name without the macros.",
+        "Transfers between your own accounts are not paired up automatically. The "
+        "rules know the usual wording (TRANSFER TO, PAYMENT - THANK YOU); for "
+        "anything else, set both sides to Internal Transfer or Credit Card Payment "
+        "so they stay out of income and expenses.",
+    ]),
+    ("Couples", [
+        "Set Household mode to Couple on the Settings sheet and give both names. In "
+        "Single mode the per-person columns and the Household sheet stay where they "
+        "are - nothing is hidden in this edition - and every row's Owner is simply "
+        "whoever's account paid.",
+        "In Couple mode every transaction has an Owner: one of you, or Joint. The "
+        "Owner is filled in from the category's Default Owner (the household's "
+        "groceries, whoever's card paid) or, failing that, from the account; pick "
+        "another from the drop-down to override it. Joint transactions are divided "
+        "using the household split, which a category can override in \"Joint Split "
+        "A\" on the Categories sheet.",
+        "\"Paid By\" is worked out from the account the money left, so it is possible "
+        "to pay for something that is not (all) yours.",
+        "The Household sheet compares what each of you paid from your own accounts "
+        "with your fair share, and says who owes whom.",
+        "The View selector on the Dashboard switches every number between the whole "
+        "household and one person's share.",
+    ]),
+    ("Canadian bits", [
+        "Categories cover the things a Canadian household actually pays: hydro, "
+        "Presto/Compass/OPUS, LCBO/SAQ, property tax, daycare, RRSP/TFSA/FHSA/RESP, "
+        "OSAP, and CRA payments and refunds.",
+        "Deposits like the Canada Child Benefit, the GST/HST credit and the Canada "
+        "Carbon Rebate are recognised as income, not as a random transfer.",
+        "The Tax summary sheet totals everything tagged as medical, donations, child "
+        "care, tuition, professional dues and so on, for the tax year of the report "
+        "month, split per person.",
+        "The Registered plans sheet tracks RRSP/TFSA/FHSA/RESP contributions per "
+        "person against the room you enter, and lists the published annual limits.",
+        "None of this is tax advice: confirm your own contribution room and what you "
+        "can claim with the CRA or your accountant.",
+    ]),
+    ("If something looks wrong", [
+        "A calculated cell shows the wrong thing, or was typed over? Copy the same "
+        "cell from the row above and paste it in. Every formula is written to work "
+        "on whichever row it lands on.",
+        "Numbers stale? Press F9 in Excel, or Ctrl+Shift+F9 in LibreOffice.",
+        "Want to start over? Select every filled row, right-click, Delete Table Rows. "
+        "Accounts, categories, rules and settings stay.",
+        "Want statements imported for you, duplicates skipped, transfers paired up "
+        "and merchant names cleaned? That is the macro-enabled edition, "
+        "Canadian-Finance-Tracker.xlsm - the two share every sheet, so your "
+        "accounts, categories and rules copy straight across.",
+    ]),
+]
+
+
+def build_help(wb: Workbook, macros: bool = True):
     ws = wb.create_sheet(SH_HELP)
     ws.sheet_view.showGridLines = False
     widths(ws, {"A": 2, "B": 4, "C": 110})
@@ -1451,7 +1768,7 @@ def build_help(wb: Workbook):
         SUB_FONT)
 
     row = 4
-    for title, lines in HELP_SECTIONS:
+    for title, lines in (HELP_SECTIONS if macros else HELP_SECTIONS_WITHOUT_MACROS):
         section(ws, row, "B", "C", title)
         row += 1
         for line in lines:
@@ -1512,7 +1829,8 @@ def add_names(wb: Workbook):
 
     name(wb, "CategoryList", "=tblCategories[Category]")
     name(wb, "AccountList", "=tblAccounts[Account]")
-    name(wb, "FormatList", "=tblFormats[Profile]")
+    if SH_FORMATS in wb.sheetnames:
+        name(wb, "FormatList", "=tblFormats[Profile]")
 
 
 def add_validation(wb: Workbook):
@@ -1535,7 +1853,8 @@ def add_validation(wb: Workbook):
     ws = wb[SH_ACCOUNTS]
     validate(ws, ["D5:D200"], "=AccountTypeList")
     validate(ws, ["E5:E200"], "=OwnerList")
-    validate(ws, ["F5:F200"], "=FormatList")
+    if SH_FORMATS in wb.sheetnames:
+        validate(ws, ["F5:F200"], "=FormatList")
     validate(ws, ["H5:H200"], "=YesNoList")
 
     ws = wb[SH_CATEGORIES]
@@ -1555,11 +1874,12 @@ def add_validation(wb: Workbook):
     validate(ws, [f"J5:J{last_rule}"], "=CategoryList")
     validate(ws, [f"K5:K{last_rule}"], "=OwnerList")
 
-    ws = wb[SH_FORMATS]
-    last_format = 4 + len(data.BANK_FORMATS) + 50
-    validate(ws, [f"E5:E{last_format}"], "=DelimiterList")
-    validate(ws, [f"G5:G{last_format}"], "=DateFormatList")
-    validate(ws, [f"I5:I{last_format}"], "=AmountModeList")
+    if SH_FORMATS in wb.sheetnames:
+        ws = wb[SH_FORMATS]
+        last_format = 4 + len(data.BANK_FORMATS) + 50
+        validate(ws, [f"E5:E{last_format}"], "=DelimiterList")
+        validate(ws, [f"G5:G{last_format}"], "=DateFormatList")
+        validate(ws, [f"I5:I{last_format}"], "=AmountModeList")
 
     ws = wb[SH_SETTINGS]
     validate(ws, ["C5"], '"Single,Couple"')
