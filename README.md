@@ -1,16 +1,29 @@
 # Canadian Finance Tracker
 
-A personal finance tracker for Canadian households, built as a single
-macro-enabled Excel workbook. Export the CSV files your bank and credit cards
-already give you, press one button, and the workbook sorts every transaction
-into a category and shows you where the money went — for one person, or for a
-couple.
+A personal finance tracker for Canadian households, built as a single Excel
+workbook. Export the CSV files your bank and credit cards already give you,
+press one button, and the workbook sorts every transaction into a category and
+shows you where the money went — for one person, or for a couple.
 
-**Download the workbook:** [`dist/Canadian-Finance-Tracker.xlsm`](dist/Canadian-Finance-Tracker.xlsm)
+It comes in two editions, built from the same source:
 
-Nothing leaves your computer. There is no add-in to install, no account to
-create and no connection to your bank — the workbook only ever reads the CSV
-files you point it at.
+| | Download | Needs | Transactions get in by |
+| --- | --- | --- | --- |
+| **Macro-enabled workbook** | [`Canadian-Finance-Tracker.xlsm`](dist/Canadian-Finance-Tracker.xlsm) | Desktop Excel with macros enabled | Importing your banks' CSV exports |
+| **Plain workbook** | [`Canadian-Finance-Tracker.xlsx`](dist/Canadian-Finance-Tracker.xlsx) | Any spreadsheet: Excel, Excel for the web, LibreOffice Calc | Typing or pasting them in |
+
+They share every sheet, every report and the same categories and rules. The
+macro-enabled edition reads statements, skips duplicates, pairs up transfers
+and cleans merchant names; the plain edition has none of that machinery and in
+exchange needs nothing enabled and opens anywhere — its Category column is a
+formula that runs the same rules against whatever you type. The ledgers have
+the same columns, so rows paste across between the two (paste as values when
+going from the plain edition, so the formulas become the answers they gave).
+
+Nothing leaves your computer with either. There is no add-in to install, no
+account to create and no connection to your bank — the macro-enabled workbook
+only ever reads the CSV files you point it at, and the plain one reads nothing
+at all.
 
 ---
 
@@ -19,6 +32,7 @@ files you point it at.
 - [What it does](#what-it-does)
 - [Getting started](#getting-started)
 - [Importing statements](#importing-statements)
+- [The plain workbook](#the-plain-workbook)
 - [Categories and rules](#categories-and-rules)
 - [Couples mode](#couples-mode)
 - [The sheets](#the-sheets)
@@ -52,9 +66,9 @@ and expenses.
 
 **Tells you where you stand.** A dashboard with money in / money out / saved,
 net cash flow, savings rate, essential versus discretionary spending, your
-biggest merchants and three charts; a twelve-month report by group and by
-category; and a budget sheet that compares each category against the monthly
-budget you set.
+biggest merchants (biggest categories, in the plain edition) and three charts;
+a twelve-month report by group and by category; and a budget sheet that
+compares each category against the monthly budget you set.
 
 **Works for two people, if you want it to.** In couple mode every transaction
 gets an owner — one of you, or Joint. Joint costs are divided by your household
@@ -69,13 +83,16 @@ credit and the Canada Carbon Rebate all have categories and rules. There is a
 tax-summary sheet keyed to CRA line numbers and a registered-plans sheet that
 tracks RRSP/TFSA/FHSA/RESP contributions per person against your room.
 
-The file ships with six months of realistic sample data (324 transactions
+Both files ship with six months of realistic sample data (324 transactions
 across four accounts) so that everything is populated the first time you open
-it. The setup wizard offers to delete it when you are ready for your own.
+them. The setup wizard offers to delete it when you are ready for your own; in
+the plain edition you select the sample rows and delete them.
 
 ---
 
 ## Getting started
+
+### The macro-enabled workbook
 
 1. **Download** [`dist/Canadian-Finance-Tracker.xlsm`](dist/Canadian-Finance-Tracker.xlsm)
    and save it somewhere you keep backups. On Windows, right-click the file,
@@ -94,7 +111,25 @@ it. The setup wizard offers to delete it when you are ready for your own.
    Contains* and imports will find the right account by themselves.
 6. **Download a CSV from each bank and press *Import statements*.**
 
+### The plain workbook
+
+1. **Download** [`dist/Canadian-Finance-Tracker.xlsx`](dist/Canadian-Finance-Tracker.xlsx)
+   and open it in whatever you use. There is nothing to enable.
+2. **Fill in the *Settings* sheet:** household mode, your names, how you split
+   shared costs, your province.
+3. **List your accounts** on the *Accounts* sheet with an owner for each — that
+   is how the workbook knows who paid.
+4. **Type a transaction** into the first empty row of the *Transactions*
+   sheet: date, account, description, amount (negative for money out). The rest
+   of the row fills itself in — number, month, category, owner, shares — and any
+   of it can be typed over.
+5. **When you are ready for your own data,** select the sample rows, right-click
+   and choose *Delete Table Rows*. Everything else stays.
+
 ### Buttons and shortcuts
+
+Macro-enabled edition only; the plain workbook has no buttons, and nothing that
+needs one.
 
 The dashboard carries *Import statements*, *Apply rules*, *Find transfers*,
 *Needs a category*, *Refresh*, *Setup wizard*, *Couple mode on/off* and *Help*.
@@ -162,6 +197,52 @@ Three things worth knowing:
 
 ---
 
+## The plain workbook
+
+The `.xlsx` is the same workbook with the macros taken out and their work
+handed to formulas. Where the importer would have written a transaction
+number, a category, an owner and a *Tagged By* into each row, the plain
+edition's ledger carries formulas for them:
+
+- **Category** runs the *Rules* sheet against the description — every enabled
+  rule, in priority order, honouring *Money in* / *Money out*, *Word* matches
+  and *Account* rules — and takes the first that claims the row. It does this
+  with one `SUMPRODUCT(MIN(...))` expression, which is the one form of array
+  evaluation every version of Excel and LibreOffice perform without being asked
+  for an array formula. Nothing matched shows `Uncategorized` and the row is
+  highlighted, exactly as in the other edition.
+- **Owner** follows the category's *Default Owner* (groceries are the
+  household's whoever's card paid) or, failing that, whoever's account paid.
+- **Txn ID**, **Month**, **Paid By** and the shares fill in from the date and the
+  account.
+- **Tagged By** reads `Rule` while the Category cell is still the formula, and
+  `Manual` once you have typed or picked something over it — so a correction
+  by hand is visible, and sticks.
+
+Two hundred ready rows wait under the sample data, and every formula column is
+declared as a calculated column, so in Excel a row typed directly under the
+table extends the table and gets its formulas. Pasting from a bank's CSV works a
+column at a time. The *Bank Formats* and *Import Log* sheets are left out, the
+import bookkeeping columns are hidden, and where the dashboard would list your
+biggest merchants (the macros write that) it ranks the month's biggest
+categories by formula instead.
+
+What it gives up, honestly: no importing, so no duplicate detection and no
+pairing of transfers between your accounts (the rules cover the common wording;
+anything else you set to *Internal Transfer* yourself); no cleaned-up merchant
+names, so *Merchant* rules are matched against the raw description; the
+*Starts With*, *Ends With*, *Equals* and *Like* tests behave as *Contains*; and
+amount limits and *Set Owner* on a rule are not applied. Single mode hides
+nothing — the per-person columns simply carry one name.
+
+The test suite recalculates this edition in LibreOffice and checks that its
+formulas give all 324 sample transactions the very category and owner the
+importer gives them, that every report then agrees with the other edition to
+the cent, and that a row typed into it is numbered, dated, categorised and
+split correctly.
+
+---
+
 ## Categories and rules
 
 Rules run in priority order and the first match wins, so specific rules should
@@ -211,8 +292,8 @@ With it on:
 
 | Sheet | What it is for |
 | --- | --- |
-| **Dashboard** | The month at a glance: money in, out and saved, net cash flow, savings rate, essential versus discretionary, spending by group, biggest merchants, three charts, and the buttons. |
-| **Transactions** | The ledger. One row per transaction, 24 columns, most of them formulas. This is the only sheet holding your data. |
+| **Dashboard** | The month at a glance: money in, out and saved, net cash flow, savings rate, essential versus discretionary, spending by group, biggest merchants (biggest categories in the plain edition), three charts, and the buttons. |
+| **Transactions** | The ledger. One row per transaction, 24 columns, most of them formulas — in the plain edition, all but the ones you type: date, account, description, amount, the reimbursable flag and notes. This is the only sheet holding your data. |
 | **Accounts** | One row per bank or card account: institution, type, owner, and the file-name fragment used to route imports. |
 | **Categories** | The 92 categories with their group, type, whether they are essential, tax tag, monthly budget, default owner and joint split. |
 | **Rules** | The categorisation rules, in priority order, with a hit counter. |
@@ -221,10 +302,10 @@ With it on:
 | **Household** | Couple mode only: settling up, income shares, year to date. |
 | **Tax Summary** | Totals per CRA line number for the tax year of the report month, split per person. |
 | **Registered Plans** | RRSP/TFSA/FHSA/RESP contributions per person against your room, with the published annual limits. |
-| **Bank Formats** | The CSV layouts described above. Editable. |
-| **Import Log** | One row per imported file. |
+| **Bank Formats** | The CSV layouts described above. Editable. Macro-enabled edition only. |
+| **Import Log** | One row per imported file. Macro-enabled edition only. |
 | **Settings** | Household mode, names, split, province, transfer window, duplicate skipping. |
-| **Help** | The same guidance as this README, inside the workbook. |
+| **Help** | The same guidance as this README, inside the workbook, written for whichever edition it is in. |
 | **Engine** | Hidden. Drop-down lists and formula templates. Leave it alone. |
 
 ---
@@ -253,18 +334,19 @@ your CRA account.
 
 ## Building it yourself
 
-The `.xlsm` is generated, not hand-edited. Everything about it — the sheets,
-formulas, formatting, sample data and the VBA project — comes out of this
-repository.
+Both workbooks are generated, not hand-edited. Everything about them — the
+sheets, formulas, formatting, sample data and the VBA project — comes out of
+this repository.
 
 ```bash
 pip install -r requirements.txt
 python3 build.py
 ```
 
-That writes `dist/Canadian-Finance-Tracker.xlsm` and refreshes the sample CSVs
-under `samples/`. The sample transactions are dated relative to today so a
-freshly built workbook always opens on a month with data in it.
+That writes `dist/Canadian-Finance-Tracker.xlsm` and
+`dist/Canadian-Finance-Tracker.xlsx` and refreshes the sample CSVs under
+`samples/`. The sample transactions are dated relative to today so a freshly
+built workbook always opens on a month with data in it.
 
 Builds are reproducible when you pin the date:
 
@@ -273,10 +355,11 @@ python3 build.py --today 2026-09-01
 ```
 
 Two runs of the same source with the same `--today` produce byte-identical
-files, which is asserted by the test suite. The committed workbook is the
-output of exactly that command.
+files, which is asserted by the test suite for both editions. The committed
+workbooks are the output of exactly that command.
 
-Other options: `--out PATH` to write elsewhere, `--no-samples` to skip the CSVs.
+Other options: `--dist DIR` to write the workbooks elsewhere, `--no-samples` to
+skip the CSVs.
 
 ### Why a build script
 
@@ -286,7 +369,8 @@ OLE compound file ([MS-CFB]), `tools/ovba.py` implements the VBA storage format
 ([MS-OVBA]) including its compression and the `dir` stream, `tools/vbaproject.py`
 assembles the modules in `vba/` into a `vbaProject.bin`, `tools/workbook.py`
 builds the spreadsheet with openpyxl, and `tools/package.py` splices the two
-together into a valid `.xlsm`. Editing the VBA is therefore a matter of editing
+together into a valid `.xlsm` — or, given no VBA project, repacks the same
+spreadsheet as the plain `.xlsx`. Editing the VBA is therefore a matter of editing
 plain text files in `vba/` and re-running the build — the macros are in version
 control and diffable, which they would not be if the workbook were the source
 of truth.
@@ -300,7 +384,7 @@ pip install -r requirements-dev.txt
 python3 -m unittest discover -s tests -t .
 ```
 
-97 tests, about 12 seconds. They fall into five groups:
+137 tests, under a minute. They fall into five groups:
 
 - **Format conformance** (`test_ovba.py`) — the compression and encryption
   vectors from [MS-OVBA] §3.2 and §2.3.1.15–17, so the writer is checked
@@ -315,12 +399,15 @@ python3 -m unittest discover -s tests -t .
   four sample bank exports, checking that every row comes back with the right
   date, sign, description, category, owner and duplicate key, that header rows
   are skipped, and that re-importing adds nothing.
-- **The built workbook** (`test_workbook.py`) — the package is a valid zip with
-  the VBA project declared and macro-enabled content types; the sheets, tables,
-  columns and named ranges the macros reference all exist; and the workbook is
-  opened in LibreOffice Calc, recalculated, and its dashboard, reports and
-  household figures compared against the same totals computed independently in
-  Python.
+- **The built workbooks** (`test_workbook.py`) — the `.xlsm` is a valid zip
+  with the VBA project declared and macro-enabled content types, and the
+  `.xlsx` carries neither; the sheets, tables, columns and named ranges the
+  macros reference all exist; both builds are byte-for-byte reproducible; and
+  each edition is opened in LibreOffice Calc, recalculated, and its dashboard,
+  reports and household figures compared against the same totals computed
+  independently in Python. The plain edition's formula categoriser is also
+  checked against every sample transaction, and exercised by typing rows into
+  it, editing rules and overriding categories.
 - **Static analysis** (`test_vbasource.py`) — Excel is the only thing that
   compiles this code and it is not available here, so these tests stand in for
   the compiler. Every qualified and unqualified call must resolve to a public
@@ -348,7 +435,7 @@ tools/
   ovba.py                 VBA storage format [MS-OVBA]
   vbaproject.py           Assembles vba/ into vbaProject.bin
   workbook.py             Builds the spreadsheet (openpyxl)
-  package.py              Splices the two into an .xlsm
+  package.py              Splices the two into an .xlsm, or repacks an .xlsx
   data.py                 Categories, rules, bank formats, CRA figures
   sample.py               Deterministic sample transactions
 vba/
@@ -371,7 +458,7 @@ vba/
   clsRule.cls             One categorisation rule
 samples/                  Four sample bank exports, in each bank's real shape
 tests/                    See above
-dist/                     The built workbook
+dist/                     The built workbooks, both editions
 ```
 
 `vba/modConst.bas` and `tools/workbook.py` have to agree about every sheet,
@@ -382,10 +469,11 @@ drift apart.
 
 ## Limits and caveats
 
-- **Excel, with macros enabled.** The workbook is built for desktop Excel.
-  Excel on the web and the mobile apps do not run VBA, and LibreOffice Calc
-  will open the file and recalculate it correctly but will not run the macros
-  without VBA compatibility mode.
+- **Importing needs desktop Excel with macros enabled.** Excel on the web and
+  the mobile apps do not run VBA, and LibreOffice Calc will open the `.xlsm`
+  and recalculate it correctly but will not run the macros without VBA
+  compatibility mode. The plain `.xlsx` is the answer in those places, and it
+  has the limits listed under [The plain workbook](#the-plain-workbook).
 - **The macros have not been run in Excel itself.** They are exercised in
   LibreOffice Basic and checked by static analysis, which catches a great deal,
   but nothing here has been through the real VBA compiler.
