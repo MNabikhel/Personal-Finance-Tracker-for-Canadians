@@ -195,6 +195,8 @@ class PackageTests(unittest.TestCase):
         with open(source, encoding="utf-8") as stream:
             text = stream.read()
         self.assertIn(f'APP_NAME As String = "{workbook.APP_NAME}"', text)
+        # The Settings sheet shows the version the macros report.
+        self.assertIn(f'APP_VERSION As String = "{workbook.APP_VERSION}"', text)
 
 
 class ShapeTests(unittest.TestCase):

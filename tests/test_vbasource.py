@@ -14,6 +14,7 @@ import os
 import re
 import sys
 import unittest
+from datetime import date
 from typing import Dict, List, Set
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -121,6 +122,48 @@ class CallTests(unittest.TestCase):
         # Harmless, but it reads as though another module were involved.
         self.assertEqual([str(call) for call in self.calls
                           if call.module == call.qualifier], [])
+
+
+class ButtonTargetTests(unittest.TestCase):
+    """What a button or shortcut names as a string is invisible to the compiler
+    and only fails when clicked, so it is resolved here instead."""
+
+    TARGET = re.compile(r'"(mod\w+)\.(\w+)"')
+
+    def setUp(self):
+        self.targets = self.TARGET.findall(MODULES["modUI"].text)
+
+    def test_there_are_targets_to_check(self):
+        # Eight dashboard buttons, nine ledger buttons and four shortcuts,
+        # with some macros reachable from more than one place.
+        self.assertGreaterEqual(len(self.targets), 21)
+
+    def test_every_button_and_shortcut_runs_a_public_parameterless_sub(self):
+        for qualifier, name in self.targets:
+            with self.subTest(f"{qualifier}.{name}"):
+                self.assertIn(qualifier, MODULES)
+                procedure = MODULES[qualifier].procedures.get(name.lower())
+                self.assertIsNotNone(procedure, "no such procedure")
+                self.assertTrue(procedure.public)
+                self.assertEqual(procedure.kind.lower(), "sub")
+                self.assertEqual(procedure.required, 0,
+                                 "Excel calls a button's macro with no arguments")
+
+    def test_the_button_rows_fit_above_the_first_content_row(self):
+        # Two rows of buttons hang from B3 on both sheets; the next row down
+        # holds the month selector on one and the table header on the other.
+        source = MODULES["modUI"].text
+
+        def constant(name):
+            return float(re.search(rf"Const {name} As \w+ = ([\d.]+)", source).group(1))
+
+        rows_needed = 2 * constant("BTN_HEIGHT") + constant("BTN_GAP")
+        built = workbook.build(date(2026, 9, 1))
+        for sheet in (workbook.SH_DASHBOARD, workbook.SH_TXN):
+            ws = built[sheet]
+            clearance = sum(ws.row_dimensions[r].height or 15 for r in (3, 4, 5))
+            with self.subTest(sheet):
+                self.assertGreaterEqual(clearance, rows_needed + 6)
 
 
 class ClassMemberTests(unittest.TestCase):
