@@ -98,6 +98,28 @@ it. The setup wizard offers to delete it when you are ready for your own.
 6. **Download a statement from each bank — CSV or PDF — and press *Import
    statements*.**
 
+### If Excel complains when you open it
+
+- **A red bar: "SECURITY RISK — Microsoft has blocked macros from running
+  because the source of this file is untrusted."** Windows marks anything
+  downloaded from the internet, and Excel refuses macros in marked files. Close
+  the workbook, right-click the file, choose *Properties*, tick **Unblock**,
+  *OK*, and open it again. Alternatively keep it in a folder you have added as
+  a Trusted Location (*File › Options › Trust Center › Trust Center Settings ›
+  Trusted Locations*).
+- **A yellow bar: "Protected View"** — press *Enable Editing*, then *Enable
+  Content* on the bar that follows.
+- **"Excel cannot open the file because the file format or file extension is
+  not valid."** The download saved GitHub's web page rather than the workbook.
+  Use the *Download raw file* button on the file's GitHub page (or clone the
+  repository); the real file is about 540 KB and opens as a zip archive.
+- **"We found a problem with some content … Do you want us to try to
+  recover?"** means a part of the file is malformed. The build checks the
+  parts Excel is strict about — table headers, defined names, the VBA project
+  binary — and this should not happen with a current build; if you see it,
+  please open an issue with the Excel version and the text of the repair
+  report, and in the meantime rebuild from source (below).
+
 ### Buttons and shortcuts
 
 The dashboard carries *Import statements*, *Apply rules*, *Find transfers*,
@@ -355,12 +377,15 @@ pip install -r requirements-dev.txt
 python3 -m unittest discover -s tests -t .
 ```
 
-121 tests, about 15 seconds. They fall into six groups:
+125 tests, about 15 seconds. They fall into six groups:
 
 - **Format conformance** (`test_ovba.py`) — the compression and encryption
   vectors from [MS-OVBA] §3.2 and §2.3.1.15–17, so the writer is checked
-  against Microsoft's own reference data, and the finished `vbaProject.bin` is
-  read back with `oletools` as an independent parser.
+  against Microsoft's own reference data; the finished `vbaProject.bin` is
+  read back with `oletools` as an independent parser; and the `dir` stream is
+  checked for the two things that make Excel drop a project it can otherwise
+  read — a class module recorded as a procedural one, and a reference list
+  that repeats the host's own libraries.
 - **VBA unit tests** (`test_vba.py`) — the pure functions (date and amount
   parsing, CSV splitting, merchant cleanup, rule matching, hashing) executed
   for real. There is no VBA interpreter available outside Excel, so
@@ -380,7 +405,9 @@ python3 -m unittest discover -s tests -t .
   only.
 - **The built workbook** (`test_workbook.py`) — the package is a valid zip with
   the VBA project declared and macro-enabled content types; the sheets, tables,
-  columns and named ranges the macros reference all exist; and the workbook is
+  columns and named ranges the macros reference all exist; table headers match
+  their table parts and names and validations are stored the way Excel stores
+  them (no leading `=`); and the workbook is
   opened in LibreOffice Calc, recalculated, and its dashboard, reports and
   household figures compared against the same totals computed independently in
   Python.
