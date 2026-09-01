@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import os
+import struct
 import sys
 import unittest
 
@@ -145,7 +146,7 @@ class ProjectTests(unittest.TestCase):
         project = ovba.Project(
             name="TestProject",
             project_id="{917DED54-440B-4FD1-A5C1-74ACF261E600}",
-            references=[ovba.VBA_REFERENCE, ovba.EXCEL_REFERENCE],
+            references=list(ovba.DEFAULT_REFERENCES),
         )
         project.add(
             ovba.Module(
@@ -163,6 +164,14 @@ class ProjectTests(unittest.TestCase):
                 "modTest",
                 ovba.module_header("modTest")
                 + "Option Explicit\n\n" + "'padding\n" * 900 + "Sub Go()\nEnd Sub\n",
+            )
+        )
+        project.add(
+            ovba.Module(
+                "clsThing",
+                ovba.module_header("clsThing", ovba.CLASS)
+                + "Option Explicit\n\nPublic Value As Long\n",
+                ovba.CLASS,
             )
         )
         return project
@@ -183,17 +192,53 @@ class ProjectTests(unittest.TestCase):
         finally:
             parser.close()
         # olevba appends .cls to document/class modules and .bas to procedural
-        # ones, so the extensions also confirm the MODULETYPE records.
-        self.assertEqual(set(found), {"ThisWorkbook.cls", "modTest.bas"})
+        # ones, so the extensions also confirm the MODULETYPE records: a class
+        # module is 0x0022 like a document module, not 0x0021.
+        self.assertEqual(set(found), {"ThisWorkbook.cls", "modTest.bas", "clsThing.cls"})
         found = {name.rsplit(".", 1)[0]: code for name, code in found.items()}
         self.assertIn("Private Sub Workbook_Open()", found["ThisWorkbook"])
         self.assertIn("Sub Go()", found["modTest"])
+        self.assertIn("Public Value As Long", found["clsThing"])
 
     def test_dir_stream_round_trips(self):
         project = self._project()
         raw = ovba.build_dir(project)
         self.assertEqual(ovba.decompress(ovba.compress(raw)), raw)
         self.assertTrue(raw.startswith(b"\x01\x00\x04\x00\x00\x00"))
+
+    def test_module_types_follow_the_kind_of_module(self):
+        # MS-OVBA 2.3.4.2.3.2.8: 0x0021 is a procedural module, 0x0022 any
+        # module with a class behind it - documents and class modules alike.
+        # Excel refuses a project whose PROJECT stream says Class= while the
+        # dir stream says procedural.
+        raw = ovba.build_dir(self._project())
+        types = {}
+        position = 0
+        current = None
+        while position + 6 <= len(raw):
+            record_id, size = struct.unpack_from("<HI", raw, position)
+            if record_id == 0x0009:          # PROJECTVERSION: fixed 12 bytes
+                position += 12
+                continue
+            payload = raw[position + 6:position + 6 + size]
+            if record_id == 0x0019:          # MODULENAME
+                current = payload.decode("cp1252")
+            elif record_id in (0x0021, 0x0022):
+                types[current] = record_id
+            position += 6 + size
+        self.assertEqual(types, {"ThisWorkbook": 0x0022, "modTest": 0x0021,
+                                 "clsThing": 0x0022})
+
+    def test_only_the_references_excel_stores_are_written(self):
+        # The VBA runtime and the Excel library are implicit host references.
+        # Excel's own files list stdole and Office only; listing the host's
+        # libraries again reads to Excel as a name conflict.
+        names = [name for name, _ in ovba.DEFAULT_REFERENCES]
+        self.assertEqual(names, ["stdole", "Office"])
+        raw = ovba.build_dir(self._project())
+        self.assertNotIn(b"Visual Basic For Applications", raw)
+        self.assertNotIn(b"Microsoft Excel", raw)
+        self.assertIn(b"OLE Automation", raw)
 
     def test_project_stream_declares_modules(self):
         text = ovba.build_project_stream(self._project()).decode("cp1252")
