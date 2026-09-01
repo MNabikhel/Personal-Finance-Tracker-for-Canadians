@@ -257,8 +257,11 @@ LEDGER_CAPACITY = 20000    # rows covered by validation and formatting
 READY_ROWS = 200
 
 # Import bookkeeping - meaningless without an importer, so the edition without
-# macros hides it as well.
+# macros hides it as well.  Merchant goes with it there: only the macros can
+# clean a description down to a merchant name, so without them the column
+# could only repeat the description beside it.
 IMPORT_COLUMNS = ["Source File", "Batch", "Match Key"]
+HIDDEN_WITHOUT_MACROS = IMPORT_COLUMNS + ["Merchant"]
 
 PLACEHOLDER = re.compile(r"@\{([^}]+)\}")
 
@@ -730,7 +733,7 @@ def build_transactions(wb: Workbook, records: Sequence[sample.Txn], macros: bool
         for row in range(header_row + 1, header_row + LEDGER_CAPACITY):
             ws[f"{letter}{row}"].number_format = fmt
 
-    for header in TXN_HIDDEN + ([] if macros else IMPORT_COLUMNS):
+    for header in TXN_HIDDEN + ([] if macros else HIDDEN_WITHOUT_MACROS):
         ws.column_dimensions[col_of(header)].hidden = True
 
     amount_letter = col_of("Amount")
@@ -1455,7 +1458,8 @@ SETTINGS_ROWS = [
     ("Person B", sample.PERSON_B, "Only used in Couple mode."),
     ("Person A share of joint costs", 0.5,
      "Used for transactions whose Owner is Joint. A category can override it."),
-    ("Province or territory", "ON", "Used for the notes on the Tax summary sheet."),
+    ("Province or territory", "ON",
+     "Kept for your reference. The workbook does not work out provincial credits."),
     ("Setup completed", "No", "Set to Yes by the setup wizard."),
     ("Transfer match window (days)", 4,
      "How far apart the two sides of a transfer can be."),
@@ -1502,8 +1506,10 @@ def build_settings(wb: Workbook, today: date, macros: bool = True):
     section(ws, row, "B", "E", "Privacy")
     put(ws, f"B{row + 1}",
         "This workbook never connects to your bank and never sends anything "
-        "anywhere. It only reads the CSV files you choose. Keep the file somewhere "
-        "safe - it contains your complete spending history.", LABEL_FONT, wrap=True)
+        "anywhere. "
+        + ("It only reads the CSV files you choose. " if macros else "")
+        + "Keep the file somewhere safe - it contains your complete spending "
+        "history.", LABEL_FONT, wrap=True)
     ws.merge_cells(f"B{row + 1}:E{row + 3}")
     printing(ws, f"B1:E{row + 3}")
 

@@ -363,7 +363,7 @@ class PlainShapeTests(unittest.TestCase):
                 self.assertTrue(str(cell.value).startswith("="), cell.value)
 
     def test_import_bookkeeping_is_hidden(self):
-        for header in workbook.IMPORT_COLUMNS + workbook.TXN_HIDDEN:
+        for header in workbook.HIDDEN_WITHOUT_MACROS + workbook.TXN_HIDDEN:
             with self.subTest(header):
                 self.assertTrue(
                     self.ledger.column_dimensions[workbook.col_of(header)].hidden)
