@@ -32,16 +32,24 @@ Private Sub Workbook_BeforeClose(Cancel As Boolean)
     modUI.DisableShortcuts
 End Sub
 
+Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
+    If Not Application.EnableEvents Then Exit Sub
+
+    Select Case Sh.Name
+        Case SH_TXN
+            LedgerChanged Target
+        Case SH_SETTINGS
+            SettingsChanged Target
+    End Select
+End Sub
+
 ' A category typed in by hand outranks the rules: tag the row as Manual so that
 ' "Apply rules to all" leaves it alone.
-Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
+Private Sub LedgerChanged(ByVal Target As Range)
     Dim lo As ListObject
     Dim touched As Range
     Dim cell As Range
     Dim taggedColumn As Long
-
-    If Sh.Name <> SH_TXN Then Exit Sub
-    If Not Application.EnableEvents Then Exit Sub
 
     On Error Resume Next
     Set lo = modUtil.TxnTable()
@@ -62,4 +70,19 @@ Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
         End If
     Next cell
     Application.EnableEvents = True
+End Sub
+
+' Household mode can be set here as well as with the button on the Dashboard.
+' Every figure follows it on its own because the shares are formulas, but the
+' per-person columns and the Household sheet only move when ApplyMode runs.
+Private Sub SettingsChanged(ByVal Target As Range)
+    Dim modeCell As Range
+
+    On Error Resume Next
+    Set modeCell = ThisWorkbook.Names(NR_MODE).RefersToRange
+    On Error GoTo 0
+    If modeCell Is Nothing Then Exit Sub
+    If Application.Intersect(Target, modeCell) Is Nothing Then Exit Sub
+
+    modHousehold.ApplyMode
 End Sub
