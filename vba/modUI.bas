@@ -105,12 +105,18 @@ End Sub
 
 Public Sub EnableShortcuts()
     On Error Resume Next
-    Application.OnKey "+^{i}", "modImport.ImportStatements"
-    Application.OnKey "+^{r}", "modRules.CategorizeUncategorized"
-    Application.OnKey "+^{t}", "modRules.TeachRuleFromSelection"
-    Application.OnKey "+^{u}", "modReport.ShowUncategorized"
+    Application.OnKey "+^{i}", InThisWorkbook("modImport.ImportStatements")
+    Application.OnKey "+^{r}", InThisWorkbook("modRules.CategorizeUncategorized")
+    Application.OnKey "+^{t}", InThisWorkbook("modRules.TeachRuleFromSelection")
+    Application.OnKey "+^{u}", InThisWorkbook("modReport.ShowUncategorized")
     On Error GoTo 0
 End Sub
+
+' A key binding is application-wide, so the macro is named with its workbook
+' or Excel looks for it in whichever workbook happens to be active.
+Private Function InThisWorkbook(ByVal macro As String) As String
+    InThisWorkbook = "'" & ThisWorkbook.Name & "'!" & macro
+End Function
 
 Public Sub DisableShortcuts()
     On Error Resume Next

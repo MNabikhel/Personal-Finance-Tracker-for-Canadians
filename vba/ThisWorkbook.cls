@@ -18,6 +18,9 @@ Private Sub Workbook_Open()
     modHousehold.ApplyMode
     modReport.RefreshTopMerchants
     Application.Goto modUtil.Sh(SH_DASHBOARD).Range("A1"), True
+    ' The buttons and refresh above are redone on every open, so they are no
+    ' reason to be asked about saving a workbook nothing was typed into.
+    ThisWorkbook.Saved = True
 
     If StrComp(modUtil.NzStr(modUtil.Setting(NR_CONFIGURED)), "Yes", vbTextCompare) <> 0 Then
         MsgBox APP_NAME & " " & APP_VERSION & vbCrLf & vbCrLf & _
