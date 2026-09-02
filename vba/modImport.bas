@@ -313,27 +313,33 @@ Public Sub UndoImport()
     Set logTable = modUtil.Tbl(SH_LOG, TBL_LOG)
     statusColumn = modUtil.ColumnIndex(logTable, modAccounts.LG_STATUS)
 
-    ' The most recent batches first, leaving out any already undone.
+    ' The most recent batches first, leaving out any already undone; the menu
+    ' shows at most nine.
+    count = 0
     For i = modUtil.BodyRows(logTable) To 1 Step -1
-        batchId = modUtil.NzStr(logTable.DataBodyRange.Cells(i, _
-                      modUtil.ColumnIndex(logTable, modAccounts.LG_BATCH)).Value)
-        If Len(batchId) > 0 And _
-           Len(modUtil.NzStr(logTable.DataBodyRange.Cells(i, statusColumn).Value)) = 0 Then
-            ReDim Preserve options(0 To count)
-            ReDim Preserve ids(0 To count)
-            ReDim Preserve logRows(0 To count)
-            options(count) = LogLabel(logTable, i)
-            ids(count) = batchId
-            logRows(count) = i
-            count = count + 1
-            If count = 9 Then Exit For
-        End If
+        If IsUndoable(logTable, i, statusColumn) Then count = count + 1
+        If count = 9 Then Exit For
     Next i
-
     If count = 0 Then
         MsgBox "There is no import to undo.", vbInformation, APP_NAME
         Exit Sub
     End If
+
+    ReDim options(0 To count - 1)
+    ReDim ids(0 To count - 1)
+    ReDim logRows(0 To count - 1)
+    count = 0
+    For i = modUtil.BodyRows(logTable) To 1 Step -1
+        If IsUndoable(logTable, i, statusColumn) Then
+            batchId = modUtil.NzStr(logTable.DataBodyRange.Cells(i, _
+                          modUtil.ColumnIndex(logTable, modAccounts.LG_BATCH)).Value)
+            options(count) = LogLabel(logTable, i)
+            ids(count) = batchId
+            logRows(count) = i
+            count = count + 1
+            If count > UBound(options) Then Exit For
+        End If
+    Next i
 
     choice = modUtil.AskChoice("Which import should be taken back?" & vbCrLf & _
                                "Every transaction it added is deleted from the ledger.", _
@@ -361,6 +367,15 @@ Public Sub UndoImport()
 Fail:
     modUtil.ReportError "UndoImport"
 End Sub
+
+' A log row that names a batch and has not been undone already.
+Private Function IsUndoable(ByVal logTable As ListObject, ByVal rowIndex As Long, _
+                            ByVal statusColumn As Long) As Boolean
+    If Len(modUtil.NzStr(logTable.DataBodyRange.Cells(rowIndex, _
+           modUtil.ColumnIndex(logTable, modAccounts.LG_BATCH)).Value)) = 0 Then Exit Function
+    IsUndoable = (Len(modUtil.NzStr(logTable.DataBodyRange.Cells(rowIndex, _
+                                    statusColumn).Value)) = 0)
+End Function
 
 ' How a batch is described in the undo menu: its file, count and date.
 Private Function LogLabel(ByVal logTable As ListObject, ByVal rowIndex As Long) As String

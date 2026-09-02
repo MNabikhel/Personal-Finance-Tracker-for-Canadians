@@ -44,16 +44,17 @@ End Function
 
 Public Function AccountNames() As Variant
     Dim lo As ListObject, i As Long, names() As String, found As Long
+    Dim total As Long
+    total = AccountRowCount()
+    If total = 0 Then Exit Function
     Set lo = AccountsTable()
-    ReDim names(0 To 0)
+    ReDim names(0 To total - 1)
     For i = 1 To modUtil.BodyRows(lo)
         If Len(AccountValue(i, AC_NAME)) > 0 Then
-            If found > 0 Then ReDim Preserve names(0 To found)
             names(found) = AccountValue(i, AC_NAME)
             found = found + 1
         End If
     Next i
-    If found = 0 Then Exit Function
     AccountNames = names
 End Function
 
@@ -101,7 +102,7 @@ Public Function ResolveAccount(ByVal fileName As String, _
     Dim i As Long
     Dim hint As String
     Dim profileName As String
-    Dim candidates() As String
+    Dim candidate As String
     Dim candidateCount As Long
     Dim names As Variant
     Dim choice As Long
@@ -119,18 +120,17 @@ Public Function ResolveAccount(ByVal fileName As String, _
         End If
     Next i
 
-    ReDim candidates(0 To 0)
+    ' The format settles it only when exactly one account uses it.
     For i = 1 To modUtil.BodyRows(lo)
         If Len(AccountValue(i, AC_NAME)) > 0 Then
             If StrComp(AccountValue(i, AC_FORMAT), profileName, vbTextCompare) = 0 Then
-                If candidateCount > 0 Then ReDim Preserve candidates(0 To candidateCount)
-                candidates(candidateCount) = AccountValue(i, AC_NAME)
+                candidate = AccountValue(i, AC_NAME)
                 candidateCount = candidateCount + 1
             End If
         End If
     Next i
     If candidateCount = 1 Then
-        ResolveAccount = candidates(0)
+        ResolveAccount = candidate
         Exit Function
     End If
 
