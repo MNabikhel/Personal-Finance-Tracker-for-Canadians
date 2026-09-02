@@ -35,6 +35,17 @@ Public Function Matches(ByVal merchant As String, ByVal description As String, _
     Matches = TextMatches(Target(merchant, description, accountName))
 End Function
 
+' A rule that names a merchant and expects money to go to it - the kind a
+' refund from that merchant should follow back into the same category.
+Public Function IsMerchantPaymentRule() As Boolean
+    Select Case UCase$(Trim$(LookIn))
+        Case "DESCRIPTION", "ACCOUNT", "ANY", "": Exit Function
+    End Select
+    Select Case UCase$(Trim$(Flow))
+        Case "MONEY OUT", "OUT", "DEBIT": IsMerchantPaymentRule = True
+    End Select
+End Function
+
 Private Function Target(ByVal merchant As String, ByVal description As String, _
                         ByVal accountName As String) As String
     Select Case UCase$(Trim$(LookIn))

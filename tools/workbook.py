@@ -1416,6 +1416,8 @@ HELP_SECTIONS = [
     ("Categories and rules", [
         "Rules turn merchant names into categories. They run in Priority order and "
         "the first match wins, so specific rules should have a lower number.",
+        "A refund from a shop the rules know lands in the same category as the "
+        "purchase, as money in, so it nets off what you spent there.",
         "Anything the rules cannot place lands in Uncategorized and is highlighted in "
         "red. Press \"Needs a category\" to filter to just those rows.",
         "Select a row and press \"Teach a rule\" to create a rule from it. From then "
