@@ -81,10 +81,17 @@ Public Function ImportOnePdf(ByVal path As String, ByVal batchId As String, _
                                                readCount, badCount)
         If records.Count = 0 Then
             If triedBoth Then
-                MsgBox "No transactions could be read from " & fileName & "." & vbCrLf & _
-                       vbCrLf & "The lines on the page do not start with a date and end " & _
-                       "with an amount. Import the CSV version of this statement instead.", _
-                       vbExclamation, APP_NAME
+                If answer = vbNo Then
+                    MsgBox "Read as a " & LCase$(kind) & " statement, " & fileName & _
+                           " has no lines that look like transactions, so it was " & _
+                           "skipped. Import it again and accept the first reading, or " & _
+                           "use the CSV version of the statement.", vbExclamation, APP_NAME
+                Else
+                    MsgBox "No transactions could be read from " & fileName & "." & _
+                           vbCrLf & vbCrLf & "The lines on the page do not start with " & _
+                           "a date and end with an amount. Import the CSV version of " & _
+                           "this statement instead.", vbExclamation, APP_NAME
+                End If
                 Exit Function
             End If
             triedBoth = True
