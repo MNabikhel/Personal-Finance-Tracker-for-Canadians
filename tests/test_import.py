@@ -435,5 +435,68 @@ End Sub
         self.assertEqual(got, [category for _, _, category in cases])
 
 
+class RefundTests(unittest.TestCase):
+    # A card statement's refunds come back as money in under the shop's own
+    # name; they belong in the category of the purchase they reverse.  Money in
+    # that the description rules recognise, and money in nobody recognises,
+    # must not be pulled in by that.
+    CASES = [
+        ("RETURN LOBLAWS #4861 TORONTO ON", 12.00, "Groceries"),
+        ("AMAZON.CA*2K4XY1 AMAZON.CA ON", 23.45, "Miscellaneous"),
+        ("LOBLAWS #4861 TORONTO ON", -99.09, "Groceries"),
+        ("PAYROLL DEPOSIT NORTHWIND", 2483.18, "Employment Income"),
+        ("TRANSFER FROM SAVINGS 1234", 200.0, "Internal Transfer"),
+        ("E-TRANSFER RECEIVED FROM JANE", 60.0, "Interac e-Transfer Received"),
+        ("XYZZY UNKNOWN MERCHANT", 19.99, None),
+    ]
+
+    def test_a_refund_follows_the_purchase_into_its_category(self):
+        lines = ["Sub Run()", "    Dim rules As Collection", "    Dim rule As clsRule",
+                 "    Set rules = modRules.ByPriority(SheetRules())"]
+        for index, (description, amount, _) in enumerate(self.CASES, start=1):
+            literal = vbahost.basic_string(description)
+            lines += [
+                f"    Set rule = modRules.RuleFor(rules, "
+                f"modRules.CleanMerchant({literal}), {literal}, \"Card\", {amount})",
+                "    If rule Is Nothing Then",
+                f"        Emit {index}, \"(none)\"",
+                "    Else",
+                f"        Emit {index}, rule.Category",
+                "    End If",
+            ]
+        lines.append("End Sub")
+
+        got = [row[1] for row in _run("\n".join(lines))]
+        want = [category or "(none)" for _, _, category in self.CASES]
+        self.assertEqual(
+            [(case[0], expected, actual)
+             for case, expected, actual in zip(self.CASES, want, got)
+             if expected != actual],
+            [])
+
+    def test_only_merchant_rules_that_expect_money_out_count_as_purchases(self):
+        body = '''
+Sub Run()
+    Dim rule As clsRule
+    Set rule = New clsRule
+    rule.LookIn = "Merchant": rule.Flow = "Money out"
+    Emit "merchant out", Flag(rule.IsMerchantPaymentRule())
+    rule.Flow = "Any"
+    Emit "merchant any", Flag(rule.IsMerchantPaymentRule())
+    rule.Flow = "Money in"
+    Emit "merchant in", Flag(rule.IsMerchantPaymentRule())
+    rule.LookIn = "Description": rule.Flow = "Money out"
+    Emit "description out", Flag(rule.IsMerchantPaymentRule())
+    rule.LookIn = "Any"
+    Emit "any out", Flag(rule.IsMerchantPaymentRule())
+    rule.LookIn = ""
+    Emit "blank out", Flag(rule.IsMerchantPaymentRule())
+End Sub
+'''
+        self.assertEqual(dict(_run(body)), {
+            "merchant out": "yes", "merchant any": "no", "merchant in": "no",
+            "description out": "no", "any out": "no", "blank out": "no"})
+
+
 if __name__ == "__main__":
     unittest.main()

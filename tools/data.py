@@ -248,7 +248,12 @@ _SEED_RULES = [
     (9, "Description", "Contains", "FHSA", "Money out", "FHSA Contribution"),
     (9, "Description", "Contains", "RESP", "Money out", "RESP Contribution"),
     # Transfers and payments next - they must win over merchant matches.
+    # Each issuer words the credit for a payment its own way: "PAYMENT - THANK
+    # YOU" (TD, Scotiabank, MBNA), "PAYMENT RECEIVED - THANK YOU" (Amex, BMO),
+    # "PAYMENT THANK YOU" (CIBC), "PAIEMENT - MERCI" (Desjardins, National).
     (10, "Description", "Contains", "PAYMENT - THANK YOU", "Money in", "Credit Card Payment"),
+    (10, "Description", "Contains", "PAYMENT RECEIVED", "Money in", "Credit Card Payment"),
+    (10, "Description", "Contains", "PAYMENT THANK YOU", "Money in", "Credit Card Payment"),
     (10, "Description", "Contains", "PAIEMENT", "Money in", "Credit Card Payment"),
     (11, "Description", "Contains", "CREDIT CARD/LOC PAY", "Any", "Credit Card Payment"),
     (12, "Description", "Contains", "TRANSFER TO", "Money out", "Internal Transfer"),

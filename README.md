@@ -248,6 +248,12 @@ account or any of them, using *Contains*, *Starts With*, *Ends With*, *Equals*,
 range. *Word* matches only at word boundaries, which is what keeps a fuel rule
 for `MOBIL` off Freedom Mobile.
 
+Refunds take care of themselves. A credit that no rule claims is tried once
+more against the merchant rules as though it were the purchase, so a return at
+Loblaws lands in *Groceries* as money in and nets off the spend. Deposits never
+get that far: the income and transfer rules go by the description and run
+first.
+
 Merchant names are cleaned before matching: payment-processor prefixes, store
 numbers, reference numbers and city/province suffixes are stripped, and
 Canadian acronyms like TFSA and LCBO survive title-casing intact.
@@ -377,7 +383,7 @@ pip install -r requirements-dev.txt
 python3 -m unittest discover -s tests -t .
 ```
 
-128 tests, about 15 seconds. They fall into six groups:
+130 tests, about 15 seconds. They fall into six groups:
 
 - **Format conformance** (`test_ovba.py`) — the compression and encryption
   vectors from [MS-OVBA] §3.2 and §2.3.1.15–17, so the writer is checked
@@ -394,7 +400,8 @@ python3 -m unittest discover -s tests -t .
 - **End-to-end import** (`test_import.py`) — the shipped import path over the
   four sample bank exports, checking that every row comes back with the right
   date, sign, description, category, owner and duplicate key, that header rows
-  are skipped, and that re-importing adds nothing.
+  are skipped, that re-importing adds nothing, and that a refund follows its
+  purchase into the same category while deposits do not.
 - **PDF statement text** (`test_pdftext.py`) — the statement parser, in
   LibreOffice Basic, over text in the shapes Canadian statements take: a card
   with posting dates, `CR` credits and the year only in the header; a chequing
