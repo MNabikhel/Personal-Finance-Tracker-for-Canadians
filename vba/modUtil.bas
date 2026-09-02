@@ -107,6 +107,10 @@ End Function
 Public Function NzNum(ByVal value As Variant, Optional ByVal fallback As Double = 0) As Double
     If IsError(value) Then
         NzNum = fallback
+    ElseIf VarType(value) = vbDate Then
+        ' A date-formatted cell reads back as a Date, and IsNumeric says False
+        ' to those; the day serial is the number wanted.
+        NzNum = CDbl(value)
     ElseIf IsNumeric(value) Then
         NzNum = CDbl(value)
     Else
