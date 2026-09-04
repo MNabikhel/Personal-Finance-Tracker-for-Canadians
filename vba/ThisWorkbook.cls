@@ -35,7 +35,7 @@ Private Sub Workbook_BeforeClose(Cancel As Boolean)
     modUI.DisableShortcuts
 End Sub
 
-Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Excel.Range)
+Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
     On Error GoTo CleanUp
     If Not Application.EnableEvents Then Exit Sub
 

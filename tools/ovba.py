@@ -24,7 +24,10 @@ STANDARD = "standard"
 CLASS = "class"
 DOCUMENT = "document"
 
-# Attribute VB_Base values Excel writes for host document modules.
+# Attribute VB_Base values Excel writes into internal module streams.  A class
+# exported from the VBE does not include its base and adds a VERSION/BEGIN/END
+# preamble instead; that exported form is not valid inside vbaProject.bin.
+CLASS_VB_BASE = "0{FCFB3D2A-A0FA-1068-A738-08002B3371B5}"
 WORKBOOK_VB_BASE = "0{00020819-0000-0000-C000-000000000046}"
 WORKSHEET_VB_BASE = "0{00020820-0000-0000-C000-000000000046}"
 
@@ -245,9 +248,39 @@ class Module:
 
     def normalised_source(self) -> str:
         text = self.source.replace("\r\n", "\n").replace("\r", "\n")
+        if self.kind == CLASS:
+            text = _class_stream_source(text, self.name)
         if not text.endswith("\n"):
             text += "\n"
         return text.replace("\n", "\r\n")
+
+
+def _class_stream_source(source: str, name: str) -> str:
+    """Convert a VBE-exported class into its internal module-stream form.
+
+    A ``.cls`` export begins with ``VERSION 1.0 CLASS`` and omits
+    ``Attribute VB_Base``.  Excel stores the inverse inside vbaProject.bin:
+    no export preamble and the universal class base after ``VB_Name``.
+    Writing the export form directly into the stream makes real Excel raise
+    compile error 5 ("Invalid procedure call or argument").
+    """
+    lines = source.splitlines()
+    if lines and lines[0].startswith("VERSION ") and lines[0].endswith(" CLASS"):
+        try:
+            end = lines.index("END", 1)
+        except ValueError as exc:
+            raise OvbaError(f"class module {name!r} has an unterminated preamble") from exc
+        lines = lines[end + 1:]
+
+    if any(line.startswith("Attribute VB_Base ") for line in lines):
+        return "\n".join(lines)
+
+    for index, line in enumerate(lines):
+        if line.startswith("Attribute VB_Name "):
+            lines.insert(index + 1, f'Attribute VB_Base = "{CLASS_VB_BASE}"')
+            return "\n".join(lines)
+
+    raise OvbaError(f"class module {name!r} has no Attribute VB_Name")
 
 
 @dataclass
