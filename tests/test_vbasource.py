@@ -149,6 +149,30 @@ class ButtonTargetTests(unittest.TestCase):
                 self.assertEqual(procedure.required, 0,
                                  "Excel calls a button's macro with no arguments")
 
+    def test_every_planned_button_is_present_with_the_right_action(self):
+        expected = {
+            "Import statements": "modImport.ImportStatements",
+            "Apply rules": "modRules.CategorizeUncategorized",
+            "Find transfers": "modTransfers.DetectTransfers",
+            "Needs a category": "modReport.ShowUncategorized",
+            "Refresh": "modReport.RefreshAll",
+            "Setup wizard": "modSetup.RunSetupWizard",
+            "Couple mode on/off": "modHousehold.ToggleHouseholdMode",
+            "Help": "modSetup.ShowHelp",
+            "Undo an import": "modImport.UndoImport",
+            "Teach a rule": "modRules.TeachRuleFromSelection",
+            "Set owner": "modHousehold.SetOwnerForSelection",
+            "Show all rows": "modReport.ClearLedgerFilters",
+            "Apply rules to all": "modRules.RecategorizeAll",
+            "Rebuild formulas": "modLedger.RepairFormulas",
+            "Start fresh": "modSetup.ClearAllTransactions",
+            "Back to dashboard": "modReport.GoToDashboard",
+        }
+        source = MODULES["modUI"].text
+        for label, target in expected.items():
+            with self.subTest(label):
+                self.assertIn(f'"{label}", "{target}"', source)
+
     def test_the_button_rows_fit_above_the_first_content_row(self):
         # Two rows of buttons hang from B3 on both sheets; the next row down
         # holds the month selector on one and the table header on the other.
@@ -329,9 +353,21 @@ class WorkflowInvariantTests(unittest.TestCase):
             "modAccounts.ClearSampleAccounts",
             MODULES["modSetup"].code,
         )
-        accounts = MODULES["modAccounts"].code
+        accounts = MODULES["modAccounts"].text
         self.assertIn('"Sample account", vbTextCompare', accounts)
         self.assertIn("lo.DataBodyRange.Rows(i).ClearContents", accounts)
+
+    def test_starting_fresh_also_clears_the_macro_written_merchant_list(self):
+        source = MODULES["modSetup"].code
+        cleared = source.index("modLedger.ClearRowsKeepOne lo")
+        refreshed = source.index("modReport.RefreshTopMerchants", cleared)
+        self.assertLess(cleared, refreshed)
+
+    def test_dashboard_selectors_refresh_the_sorted_merchant_list(self):
+        source = MODULES["ThisWorkbook"].code
+        self.assertIn("Case SH_DASHBOARD", source)
+        self.assertIn("DashboardChanged Target", source)
+        self.assertGreaterEqual(source.count("modReport.RefreshTopMerchants"), 3)
 
 
 if __name__ == "__main__":

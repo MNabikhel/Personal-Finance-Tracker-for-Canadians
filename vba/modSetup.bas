@@ -132,20 +132,23 @@ Public Sub ClearAllTransactions(Optional ByVal confirm As Boolean = True)
 
     On Error Resume Next
     Set logTable = modUtil.Tbl(SH_LOG, TBL_LOG)
+    On Error GoTo Fail
     If Not logTable Is Nothing Then
         modLedger.ClearRowsKeepOne logTable
     End If
 
+    On Error Resume Next
     Set rules = modRules.RulesTable()
+    On Error GoTo Fail
     If Not rules Is Nothing Then
         For i = 1 To modUtil.BodyRows(rules)
             rules.DataBodyRange.Cells(i, modUtil.ColumnIndex(rules, RL_HITS)).Value = 0
         Next i
     End If
-    On Error GoTo 0
 
     modUtil.FastMode False
     Application.Calculate
+    modReport.RefreshTopMerchants
     If confirm Then MsgBox "The ledger is empty and ready for your own data.", _
                            vbInformation, APP_NAME
     Exit Sub

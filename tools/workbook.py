@@ -26,7 +26,7 @@ from openpyxl.workbook.defined_name import DefinedName
 from . import data, sample
 
 APP_NAME = "Canadian Finance Tracker"       # matches modConst.APP_NAME
-APP_VERSION = "1.1.0"                       # matches modConst.APP_VERSION
+APP_VERSION = "1.1.1"                       # matches modConst.APP_VERSION
 
 # --- Look and feel ----------------------------------------------------------
 
@@ -349,7 +349,7 @@ def build(today: Optional[date] = None) -> Workbook:
     wb.properties.created = datetime.combine(today, time())
     wb.properties.modified = wb.properties.created
 
-    build_dashboard(wb, report_month(today))
+    build_dashboard(wb, report_month(today), records)
     build_transactions(wb, records)
     build_accounts(wb)
     build_categories(wb)
@@ -401,7 +401,8 @@ DASH_KPIS_RIGHT = [
     ("Essential spending", '-SUMIFS(tblTxn[View Amount],tblTxn[Month],ReportMonth,tblTxn[Type],"Expense",tblTxn[Essential],"Yes")', MONEY),
     ("Discretionary spending", "C10-F9", MONEY),
     ("Average spend per day", 'IFERROR(C10/DAY(EOMONTH(DATE(VALUE(LEFT(ReportMonth,4)),VALUE(RIGHT(ReportMonth,2)),1),0)),"")', MONEY),
-    ("Transactions this month", "COUNTIFS(tblTxn[Month],ReportMonth)", "#,##0"),
+    ("Transactions this month",
+     'COUNTIFS(tblTxn[Month],ReportMonth,tblTxn[View Amount],"<>0")', "#,##0"),
     # Blank until the user actually sets budgets, rather than claiming they are
     # thousands of dollars over a budget of zero. Category budgets are
     # household amounts, so comparing one person's share with all of them
@@ -414,7 +415,8 @@ DASH_KPIS_RIGHT = [
 ]
 
 
-def build_dashboard(wb: Workbook, opening_month: str):
+def build_dashboard(wb: Workbook, opening_month: str,
+                    records: Sequence[sample.Txn]):
     ws = wb.create_sheet(SH_DASHBOARD)
     ws.sheet_view.showGridLines = False
     widths(ws, {"A": 2, "B": 26, "C": 15, "D": 2, "E": 26, "F": 15, "G": 2,
@@ -483,8 +485,12 @@ def build_dashboard(wb: Workbook, opening_month: str):
     put(ws, f"C{merchants_top + 1}", "Spent", BOLD, align="right")
     for row in range(merchants_top + 2, merchants_top + 12):
         ws[f"C{row}"].number_format = MONEY
+    for offset, (merchant, amount) in enumerate(
+            opening_top_merchants(records, opening_month)):
+        put(ws, f"B{merchants_top + 2 + offset}", merchant, LABEL_FONT)
+        put(ws, f"C{merchants_top + 2 + offset}", amount, fmt=MONEY, align="right")
     put(ws, f"E{merchants_top + 2}",
-        "This list is written by the Refresh button (it needs macros).",
+        "The Refresh button keeps this list current (it needs macros).",
         NOTE_FONT, wrap=True)
     ws.merge_cells(f"E{merchants_top + 2}:I{merchants_top + 4}")
 
@@ -535,9 +541,26 @@ def build_dashboard(wb: Workbook, opening_month: str):
     # figures, so the printed Dashboard is the figures.
     printing(ws, f"B1:I{DASH_COUPLE_LAST}")
 
-    # Anchors used by the macros.
+    # Anchor used by the macros.
     ws["B3"].value = None
-    ws["B33"].value = None
+
+
+def opening_top_merchants(records: Sequence[sample.Txn],
+                          opening_month: str) -> list[tuple[str, float]]:
+    """The sample view before Workbook_Open refreshes its macro-written list."""
+    category_type = {row[0]: row[2] for row in data.CATEGORIES}
+    totals: dict[str, float] = {}
+    for txn in records:
+        if txn.month != opening_month:
+            continue
+        if category_type.get(txn.category, "Expense") != "Expense":
+            continue
+        totals[txn.merchant or "(no merchant)"] = (
+            totals.get(txn.merchant or "(no merchant)", 0) - txn.amount
+        )
+    positive = ((merchant, round(amount, 2))
+                for merchant, amount in totals.items() if amount > 0)
+    return sorted(positive, key=lambda pair: pair[1], reverse=True)[:10]
 
 
 # --- Transactions -----------------------------------------------------------
@@ -809,7 +832,8 @@ CASHFLOW_ROWS = [
     ("Savings rate", '=IFERROR(({col}{income}-{col}{spend})/{col}{income},"")', PERCENT),
     ("Essential spending", '=-SUMIFS(tblTxn[View Amount],tblTxn[Month],{month},tblTxn[Type],"Expense",tblTxn[Essential],"Yes")', MONEY),
     ("Discretionary spending", "={col}{spend}-{col}{essential}", MONEY),
-    ("Transactions", "=COUNTIFS(tblTxn[Month],{month})", "#,##0"),
+    ("Transactions",
+     '=COUNTIFS(tblTxn[Month],{month},tblTxn[View Amount],"<>0")', "#,##0"),
 ]
 
 

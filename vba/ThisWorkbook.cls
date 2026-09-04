@@ -41,6 +41,8 @@ Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
     Select Case Sh.Name
         Case SH_TXN
             LedgerChanged Target
+        Case SH_DASHBOARD
+            DashboardChanged Target
         Case SH_SETTINGS
             SettingsChanged Target
     End Select
@@ -73,6 +75,29 @@ Private Sub LedgerChanged(ByVal Target As Range)
         End If
     Next cell
     Application.EnableEvents = True
+End Sub
+
+' The figures and charts are formulas, but the sorted merchant list is written
+' by VBA. Keep it in step when either Dashboard selector changes.
+Private Sub DashboardChanged(ByVal Target As Range)
+    Dim monthCell As Range
+    Dim viewCell As Range
+
+    On Error Resume Next
+    Set monthCell = ThisWorkbook.Names(NR_REPORT_MONTH).RefersToRange
+    Set viewCell = ThisWorkbook.Names(NR_REPORT_VIEW).RefersToRange
+    On Error GoTo 0
+    If Not monthCell Is Nothing Then
+        If Not Application.Intersect(Target, monthCell) Is Nothing Then
+            modReport.RefreshTopMerchants
+            Exit Sub
+        End If
+    End If
+    If Not viewCell Is Nothing Then
+        If Not Application.Intersect(Target, viewCell) Is Nothing Then
+            modReport.RefreshTopMerchants
+        End If
+    End If
 End Sub
 
 ' Household mode can be set here as well as with the button on the Dashboard.

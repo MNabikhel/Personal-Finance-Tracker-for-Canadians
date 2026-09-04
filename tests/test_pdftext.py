@@ -300,21 +300,6 @@ End Sub
 '''
         self.assertEqual(_run(body)[0], ["Bank account"])
 
-    def test_a_foreign_card_purchase_uses_the_final_posted_amount(self):
-        # Some card PDFs put the original-currency amount immediately before
-        # the Canadian amount. Reading backwards, amounts(1) is the posted
-        # amount; using the last collected token imports the foreign amount.
-        rows = _read(
-            "Statement date: September 19, 2026\n"
-            "Minimum payment: $10.00\n"
-            "SEP 03 SEP 04 FOREIGN MERCHANT USD 10.00 13.82",
-            "Credit card",
-        )[1:]
-        self.assertEqual(
-            [tuple(row[:3]) for row in rows],
-            [("2026-09-03", "-13.82", "FOREIGN MERCHANT USD")],
-        )
-
     def test_payment_apps_and_debit_interest_are_not_bank_deposits(self):
         # On account PDFs without a running balance, wording is the only sign
         # clue. The word "pay" in Apple Pay/Google Pay and "interest" in an

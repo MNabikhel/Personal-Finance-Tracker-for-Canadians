@@ -73,6 +73,11 @@ Public Function ImportOnePdf(ByVal path As String, ByVal batchId As String, _
                                   APP_NAME, CStr(Year(Date))))
         If Not IsNumeric(yearText) Then Exit Function
         anchorYear = CLng(Val(yearText))
+        If anchorYear < 1900 Or anchorYear > 2200 Then
+            MsgBox "Enter the four-digit statement year (for example " & _
+                   Year(Date) & ").", vbExclamation, APP_NAME
+            Exit Function
+        End If
     End If
 
     kind = modPdfText.DetectKind(lines, anchorYear, anchorMonth)

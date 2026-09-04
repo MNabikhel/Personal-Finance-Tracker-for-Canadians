@@ -181,6 +181,12 @@ class PackageTests(unittest.TestCase):
         self.assertFalse(self.described["sheet_content_type"],
                          "the plain spreadsheet content type must be replaced")
 
+    def test_the_file_ships_without_external_links_or_saved_data_connections(self):
+        names = set(self.described["names"])
+        self.assertNotIn("xl/connections.xml", names)
+        self.assertFalse(any(name.startswith("xl/externalLinks/") for name in names))
+        self.assertFalse(any(name.startswith("xl/queryTables/") for name in names))
+
     def test_two_builds_of_one_source_are_the_same_bytes(self):
         self.assertEqual(builder.build_package(TODAY), _blob)
 
@@ -324,6 +330,30 @@ class ShapeTests(unittest.TestCase):
                         return
         self.fail("no whole-row rule for uncategorised transactions")
 
+    def test_all_three_dashboard_charts_point_at_the_live_report_ranges(self):
+        charts = self.wb[workbook.SH_DASHBOARD]._charts
+        self.assertEqual([type(chart).__name__ for chart in charts],
+                         ["BarChart", "LineChart", "DoughnutChart"])
+        got = []
+        for chart in charts:
+            for series in chart.ser:
+                categories = (
+                    series.cat.strRef.f if series.cat.strRef is not None
+                    else series.cat.numRef.f
+                )
+                got.append((series.tx.strRef.f, series.val.numRef.f, categories))
+        self.assertEqual(got, [
+            ("'Reports'!B5", "'Reports'!$C$5:$N$5", "'Reports'!$C$4:$N$4"),
+            ("'Reports'!B6", "'Reports'!$C$6:$N$6", "'Reports'!$C$4:$N$4"),
+            ("'Reports'!B8", "'Reports'!$C$8:$N$8", "'Reports'!$C$4:$N$4"),
+            ("'Dashboard'!C16", "'Dashboard'!$C$17:$C$28",
+             "'Dashboard'!$B$17:$B$28"),
+        ])
+        self.assertEqual(
+            [(chart.anchor._from.col, chart.anchor._from.row) for chart in charts],
+            [(10, 2), (10, 18), (10, 34)],
+        )
+
     def test_the_sample_data_is_actually_in_the_ledger(self):
         ws = self.wb[workbook.SH_TXN]
         first = workbook.TXN_FIRST_ROW + 1
@@ -423,6 +453,36 @@ class RecalculationTests(unittest.TestCase):
                   + self.book.number(self.sheet, "C11"), CENTS),
             "the groups must account for the spending and the saving together")
 
+    def test_changing_the_report_month_repoints_the_dashboard(self):
+        earlier = sorted({txn.month for txn in _records})[-2]
+        rows = [txn for txn in _records if txn.month == earlier]
+        try:
+            self.book.set(self.sheet, "C6", earlier)
+            self.assertEqual(self.book.number(self.sheet, "C9"),
+                             _total(_of_type(rows, "Income")))
+            self.assertEqual(self.book.number(self.sheet, "C10"),
+                             -_total(_of_type(rows, "Expense")))
+            self.assertEqual(self.book.number(self.sheet, "F12"), len(rows))
+        finally:
+            self.book.set(self.sheet, "C6", MONTH)
+
+    def test_the_opening_dashboard_already_shows_the_top_merchants(self):
+        totals: Dict[str, Decimal] = {}
+        for txn in _of_type(_month(_records), "Expense"):
+            totals[txn.merchant] = totals.get(txn.merchant, Decimal(0)) - _amount(txn)
+        expected = sorted(
+            ((merchant, float(_round(amount)))
+             for merchant, amount in totals.items() if amount > 0),
+            key=lambda pair: pair[1],
+            reverse=True,
+        )[:10]
+        got = [
+            (self.book.text(self.sheet, f"B{workbook.DASH_MERCHANTS_TOP + 2 + i}"),
+             self.book.number(self.sheet, f"C{workbook.DASH_MERCHANTS_TOP + 2 + i}"))
+            for i in range(10)
+        ]
+        self.assertEqual(got, expected)
+
 
 class ReportsTests(unittest.TestCase):
     """The twelve months behind the Dashboard."""
@@ -474,6 +534,26 @@ class ReportsTests(unittest.TestCase):
                              for i in range(workbook.REPORT_MONTHS))
                 self.assertEqual(self.book.number(self.sheet, f"{total}{row}"),
                                  round(months, CENTS))
+
+    def test_every_category_row_agrees_with_the_selected_month(self):
+        category_first = (
+            5 + len(workbook.CASHFLOW_ROWS) + 1
+            + len(data.SPENDING_GROUPS) + 3
+        )
+        month = _month(_records)
+        for index, category in enumerate(data.CATEGORIES):
+            name, _group, kind = category[:3]
+            rows = [txn for txn in month if txn.category == name]
+            expected = _total(rows) if kind == "Income" else -_total(rows)
+            with self.subTest(name):
+                self.assertEqual(
+                    self.book.text(self.sheet, f"B{category_first + index}"),
+                    name,
+                )
+                self.assertEqual(
+                    self.book.number(self.sheet, f"N{category_first + index}"),
+                    expected,
+                )
 
 class BudgetTests(unittest.TestCase):
     """Budget comparisons stay internally consistent with month and View."""
@@ -531,6 +611,128 @@ class BudgetTests(unittest.TestCase):
             self.assertEqual(self.book.text(workbook.SH_DASHBOARD, "F13"), "")
         finally:
             self.book.set(workbook.SH_DASHBOARD, "F6", "Household")
+
+class EmptyLedgerTests(unittest.TestCase):
+    """Starting fresh leaves a valid, quiet workbook rather than formula errors."""
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            libreoffice.context()
+        except libreoffice.Unavailable as exc:  # pragma: no cover - environment
+            raise unittest.SkipTest(str(exc))
+
+        wb = load_workbook(io.BytesIO(_blob), data_only=False, keep_vba=True)
+        ws = wb[workbook.SH_TXN]
+        first = workbook.TXN_FIRST_ROW + 1
+        if len(_records) > 1:
+            ws.delete_rows(first + 1, len(_records) - 1)
+        for header in workbook.TXN_HEADERS:
+            cell = ws.cell(first, workbook.col_number(header))
+            cell.value = (workbook.formula_a1(header, first)
+                          if header in workbook.TXN_FORMULAS else None)
+        ws.tables["tblTxn"].ref = (
+            f"{workbook.col_of(workbook.TXN_HEADERS[0])}{workbook.TXN_FIRST_ROW}:"
+            f"{workbook.col_of(workbook.TXN_HEADERS[-1])}{first}"
+        )
+
+        handle, cls.path = tempfile.mkstemp(prefix="cft-empty-", suffix=".xlsm")
+        os.close(handle)
+        wb.save(cls.path)
+        cls.formulas = [
+            (sheet.title, cell.coordinate)
+            for sheet in wb.worksheets
+            for row in sheet.iter_rows()
+            for cell in row
+            if cell.data_type == "f"
+        ]
+        cls.book = Recalculated(cls.path)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.book.close()
+        os.unlink(cls.path)
+
+    def test_the_dashboard_reads_as_an_empty_month(self):
+        self.assertEqual(self.book.number(workbook.SH_DASHBOARD, "C9"), 0)
+        self.assertEqual(self.book.number(workbook.SH_DASHBOARD, "C10"), 0)
+        self.assertEqual(self.book.number(workbook.SH_DASHBOARD, "C11"), 0)
+        self.assertEqual(self.book.number(workbook.SH_DASHBOARD, "F12"), 0)
+        self.assertEqual(self.book.number(workbook.SH_DASHBOARD, "I6"), 0)
+        self.assertEqual(self.book.text(workbook.SH_DASHBOARD, "C13"), "")
+
+    def test_no_cell_formula_turns_into_an_error(self):
+        errors = [
+            f"{sheet}!{ref}={self.book.cell(sheet, ref).getError()}"
+            for sheet, ref in self.formulas
+            if self.book.cell(sheet, ref).getError()
+        ]
+        self.assertEqual(errors, [])
+
+class TaxAndRegisteredPlanTests(unittest.TestCase):
+    """Canadian tax tags and registered-plan ownership stay traceable."""
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            libreoffice.context()
+        except libreoffice.Unavailable as exc:  # pragma: no cover - environment
+            raise unittest.SkipTest(str(exc))
+        cls.book = Recalculated(_path)
+        cls.tax_year = int(MONTH[:4])
+        cls.records = [txn for txn in _records
+                       if txn.when.year == cls.tax_year]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.book.close()
+
+    def test_every_tax_tag_total_and_personal_share_is_correct(self):
+        tag_of = {row[0]: row[4] for row in data.CATEGORIES}
+        for index, (tag, _note) in enumerate(data.TAX_TAGS):
+            records = [txn for txn in self.records if tag_of.get(txn.category) == tag]
+            row = 6 + index
+            with self.subTest(tag):
+                self.assertEqual(
+                    self.book.number(workbook.SH_TAX, f"C{row}"),
+                    abs(_total(records)),
+                )
+                self.assertEqual(
+                    self.book.number(workbook.SH_TAX, f"D{row}"),
+                    abs(_sum(_share_a(txn) for txn in records)),
+                )
+                self.assertEqual(
+                    self.book.number(workbook.SH_TAX, f"E{row}"),
+                    abs(_sum(_share_b(txn) for txn in records)),
+                )
+
+    def test_registered_plan_totals_follow_the_transaction_owner(self):
+        joint_total = Decimal(0)
+        for index, (_plan, category, room) in enumerate(workbook.PLANS):
+            row = 6 + index
+            for owner, column in ((sample.PERSON_A, "C"), (sample.PERSON_B, "G")):
+                records = [txn for txn in self.records
+                           if txn.category == category and txn.owner == owner]
+                with self.subTest(category=category, owner=owner):
+                    self.assertEqual(
+                        self.book.number(workbook.SH_REGISTERED, f"{column}{row}"),
+                        abs(_total(records)),
+                    )
+            joint = [txn for txn in self.records
+                     if txn.category == category and txn.owner == "Joint"]
+            joint_total += abs(sum((_amount(txn) for txn in joint), Decimal(0)))
+            self.assertEqual(
+                self.book.number(workbook.SH_REGISTERED, f"D{row}"),
+                room,
+            )
+            self.assertEqual(
+                self.book.number(workbook.SH_REGISTERED, f"H{row}"),
+                room,
+            )
+        self.assertEqual(
+            self.book.number(workbook.SH_REGISTERED, "C10"),
+            float(_round(joint_total)),
+        )
 
 
 class CoupleModeTests(unittest.TestCase):
@@ -602,6 +804,14 @@ class CoupleModeTests(unittest.TestCase):
                     self.assertEqual(
                         self.book.number(workbook.SH_DASHBOARD, "C10"),
                         -_sum(share(txn) for txn in _of_type(month, "Expense")))
+                    self.assertEqual(
+                        self.book.number(workbook.SH_DASHBOARD, "F12"),
+                        len([txn for txn in month if share(txn) != 0]),
+                    )
+                    self.assertEqual(
+                        self.book.number(workbook.SH_REPORTS, "N12"),
+                        len([txn for txn in month if share(txn) != 0]),
+                    )
         finally:
             self.book.set(workbook.SH_DASHBOARD, "F6", "Household")
 

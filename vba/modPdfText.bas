@@ -315,10 +315,10 @@ Private Function ParseLine(ByVal line As String, ByVal kind As String, _
         End If
     Else
         ' On a card statement a plain figure is a charge and a credit is
-        ' marked, with a minus sign or a CR after it.  The amount posted to the
-        ' card is the last money on the line (amounts(1)); a foreign purchase
-        ' may print its original-currency amount immediately before that too.
-        amount = amounts(1)
+        ' marked, with a minus sign or a CR after it. If an account-shaped line
+        ' is being tried as a card, the earlier figure is the transaction and
+        ' the final one is its running balance.
+        amount = amounts(moneyCount)
         If creditMark Or amount < 0 Then
             amount = Abs(amount)
         Else

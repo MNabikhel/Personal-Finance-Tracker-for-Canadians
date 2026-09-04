@@ -79,16 +79,16 @@ End Sub
 ' would also delete the first import.  Existing log and ledger rows settle the
 ' collision before anything is appended.
 Private Function NewBatchId(ByVal stamp As String, ByVal fileIndex As Long) As String
-    Dim base As String
+    Dim baseName As String
     Dim candidate As String
     Dim suffix As Long
 
-    base = "B" & stamp & "-" & fileIndex
-    candidate = base
+    baseName = "B" & stamp & "-" & fileIndex
+    candidate = baseName
     suffix = 1
     Do While BatchIdExists(candidate)
         suffix = suffix + 1
-        candidate = base & "-" & suffix
+        candidate = baseName & "-" & suffix
     Loop
     NewBatchId = candidate
 End Function

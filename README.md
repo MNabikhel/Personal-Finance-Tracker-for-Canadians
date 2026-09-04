@@ -384,7 +384,7 @@ pip install -r requirements-dev.txt
 python3 -m unittest discover -s tests -t .
 ```
 
-130 tests, about 15 seconds. They fall into six groups:
+155 tests, about 30 seconds. They fall into six groups:
 
 - **Format conformance** (`test_ovba.py`) — the compression and encryption
   vectors from [MS-OVBA] §3.2 and §2.3.1.15–17, so the writer is checked
@@ -408,9 +408,9 @@ python3 -m unittest discover -s tests -t .
   with posting dates, `CR` credits and the year only in the header; a chequing
   account with a running balance and the date printed once per day; a
   Scotiabank card with reference numbers; a French statement; a January
-  statement with December lines. Getting the text out of the PDF is Excel's
-  part and cannot be run here, so `modPdf.bas` is covered by static analysis
-  only.
+  statement with December lines; plus payment-app and debit-interest wording
+  that must stay money out. Getting the text out of the PDF is Excel's part
+  and cannot be run here, so `modPdf.bas` is covered by static analysis only.
 - **The built workbook** (`test_workbook.py`) — the package is a valid zip with
   the VBA project declared and macro-enabled content types; the sheets, tables,
   columns and named ranges the macros reference all exist; table headers match
@@ -418,7 +418,8 @@ python3 -m unittest discover -s tests -t .
   them (no leading `=`); and the workbook is
   opened in LibreOffice Calc, recalculated, and its dashboard, reports and
   household figures compared against the same totals computed independently in
-  Python.
+  Python. Alternate months, personal views, chart sources, category budgets
+  and a completely empty ledger are checked too.
 - **Static analysis** (`test_vbasource.py`) — Excel is the only thing that
   compiles this code and it is not available here, so these tests stand in for
   the compiler. Every qualified and unqualified call must resolve to a public
