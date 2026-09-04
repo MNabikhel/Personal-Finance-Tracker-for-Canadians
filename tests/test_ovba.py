@@ -200,6 +200,25 @@ class ProjectTests(unittest.TestCase):
         self.assertIn("Sub Go()", found["modTest"])
         self.assertIn("Public Value As Long", found["clsThing"])
 
+    def test_class_stream_uses_excels_internal_source_form(self):
+        import olefile
+
+        blob = ovba.build(self._project())
+        with olefile.OleFileIO(io.BytesIO(blob)) as ole:
+            source = ovba.decompress(ole.openstream("VBA/clsThing").read()).decode(
+                ovba.MBCS
+            )
+
+        # VBE exports a class with VERSION/BEGIN/END and no VB_Base.  The
+        # internal stream is deliberately the opposite; writing export form
+        # here makes Excel raise compile error 5 at the first class use.
+        self.assertFalse(source.startswith("VERSION 1.0 CLASS"))
+        self.assertIn(
+            f'Attribute VB_Base = "{ovba.CLASS_VB_BASE}"\r\n',
+            source,
+        )
+        self.assertIn("Public Value As Long", source)
+
     def test_dir_stream_round_trips(self):
         project = self._project()
         raw = ovba.build_dir(project)
