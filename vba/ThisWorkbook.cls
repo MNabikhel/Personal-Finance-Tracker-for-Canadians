@@ -35,7 +35,8 @@ Private Sub Workbook_BeforeClose(Cancel As Boolean)
     modUI.DisableShortcuts
 End Sub
 
-Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
+Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Excel.Range)
+    On Error GoTo CleanUp
     If Not Application.EnableEvents Then Exit Sub
 
     Select Case Sh.Name
@@ -46,14 +47,20 @@ Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
         Case SH_SETTINGS
             SettingsChanged Target
     End Select
+    Exit Sub
+
+CleanUp:
+    ' A worksheet edit must never leave Excel's application-wide events off
+    ' or interrupt opening the workbook with a runtime dialog.
+    Application.EnableEvents = True
 End Sub
 
 ' A category typed in by hand outranks the rules: tag the row as Manual so that
 ' "Apply rules to all" leaves it alone.
-Private Sub LedgerChanged(ByVal Target As Range)
-    Dim lo As ListObject
-    Dim touched As Range
-    Dim cell As Range
+Private Sub LedgerChanged(ByVal Target As Excel.Range)
+    Dim lo As Excel.ListObject
+    Dim touched As Excel.Range
+    Dim cell As Excel.Range
     Dim taggedColumn As Long
 
     On Error Resume Next
@@ -78,9 +85,9 @@ End Sub
 
 ' The figures and charts are formulas, but the sorted merchant list is written
 ' by VBA. Keep it in step when either Dashboard selector changes.
-Private Sub DashboardChanged(ByVal Target As Range)
-    Dim monthCell As Range
-    Dim viewCell As Range
+Private Sub DashboardChanged(ByVal Target As Excel.Range)
+    Dim monthCell As Excel.Range
+    Dim viewCell As Excel.Range
 
     On Error Resume Next
     Set monthCell = ThisWorkbook.Names(NR_REPORT_MONTH).RefersToRange
@@ -102,8 +109,8 @@ End Sub
 ' Household mode can be set here as well as with the button on the Dashboard.
 ' Every figure follows it on its own because the shares are formulas, but the
 ' per-person columns and the Household sheet only move when ApplyMode runs.
-Private Sub SettingsChanged(ByVal Target As Range)
-    Dim modeCell As Range
+Private Sub SettingsChanged(ByVal Target As Excel.Range)
+    Dim modeCell As Excel.Range
 
     On Error Resume Next
     Set modeCell = ThisWorkbook.Names(NR_MODE).RefersToRange
