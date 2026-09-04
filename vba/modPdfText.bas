@@ -315,8 +315,10 @@ Private Function ParseLine(ByVal line As String, ByVal kind As String, _
         End If
     Else
         ' On a card statement a plain figure is a charge and a credit is
-        ' marked, with a minus sign or a CR after it.
-        amount = amounts(moneyCount)
+        ' marked, with a minus sign or a CR after it.  The amount posted to the
+        ' card is the last money on the line (amounts(1)); a foreign purchase
+        ' may print its original-currency amount immediately before that too.
+        amount = amounts(1)
         If creditMark Or amount < 0 Then
             amount = Abs(amount)
         Else
@@ -588,10 +590,20 @@ End Function
 ' and the ledger's editable Amount are for.
 Public Function LooksLikeMoneyIn(ByVal description As String) As Boolean
     Dim lower As String
+    Dim moneyOut As Variant
     Dim words As Variant
     Dim i As Long
     lower = " " & LCase$(description) & " "
-    words = Array(" deposit", " payroll", " pay ", " refund", " credit memo", _
+
+    ' These contain words that otherwise look credit-like.  Apple Pay is a
+    ' purchase, and overdraft/debit interest is a charge.
+    moneyOut = Array(" apple pay", " google pay", " interest charge", _
+                     " overdraft interest", " debit interest", " interest debit")
+    For i = LBound(moneyOut) To UBound(moneyOut)
+        If InStr(lower, moneyOut(i)) > 0 Then Exit Function
+    Next i
+
+    words = Array(" deposit", " payroll", " refund", " credit memo", _
                   " interest", " rebate", " transfer from", " received", " reversal", _
                   " cashback", " cash back", " canada fed", " canada pro", _
                   " canada rit", " canada child", " cra ", " gst", " hst", _

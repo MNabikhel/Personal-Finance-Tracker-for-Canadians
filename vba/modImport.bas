@@ -16,6 +16,7 @@ Public Sub ImportStatements()
     Dim totalImported As Long, totalSkipped As Long, filesDone As Long
     Dim summary As String
     Dim batchStamp As String
+    Dim batchId As String
     Dim line As String
 
     On Error GoTo Fail
@@ -34,11 +35,12 @@ Public Sub ImportStatements()
     batchStamp = Format$(Now, "yyyymmdd-hhnnss")
 
     For i = LBound(chosen) To UBound(chosen)
+        batchId = NewBatchId(batchStamp, i)
         If modPdf.IsPdf(CStr(chosen(i))) Then
-            line = modPdf.ImportOnePdf(CStr(chosen(i)), "B" & batchStamp & "-" & i, _
+            line = modPdf.ImportOnePdf(CStr(chosen(i)), batchId, _
                                        totalImported, totalSkipped)
         Else
-            line = ImportOneFile(CStr(chosen(i)), "B" & batchStamp & "-" & i, _
+            line = ImportOneFile(CStr(chosen(i)), batchId, _
                                  totalImported, totalSkipped)
         End If
         If Len(line) > 0 Then
@@ -71,6 +73,61 @@ Public Sub ImportStatements()
 Fail:
     modUtil.ReportError "ImportStatements"
 End Sub
+
+' A user can finish one import and start another within the same second.  A
+' timestamp plus file index would then repeat, and undoing the second log row
+' would also delete the first import.  Existing log and ledger rows settle the
+' collision before anything is appended.
+Private Function NewBatchId(ByVal stamp As String, ByVal fileIndex As Long) As String
+    Dim base As String
+    Dim candidate As String
+    Dim suffix As Long
+
+    base = "B" & stamp & "-" & fileIndex
+    candidate = base
+    suffix = 1
+    Do While BatchIdExists(candidate)
+        suffix = suffix + 1
+        candidate = base & "-" & suffix
+    Loop
+    NewBatchId = candidate
+End Function
+
+Private Function BatchIdExists(ByVal batchId As String) As Boolean
+    Dim lo As ListObject
+    Dim values As Variant
+    Dim i As Long
+
+    On Error Resume Next
+    Set lo = modUtil.Tbl(SH_LOG, TBL_LOG)
+    On Error GoTo 0
+    If Not lo Is Nothing Then
+        values = modLedger.ReadColumn(lo, modAccounts.LG_BATCH)
+        If IsArray(values) Then
+            For i = 1 To UBound(values, 1)
+                If StrComp(modUtil.NzStr(values(i, 1)), batchId, vbTextCompare) = 0 Then
+                    BatchIdExists = True
+                    Exit Function
+                End If
+            Next i
+        End If
+    End If
+
+    ' A previous append may have succeeded immediately before a logging error.
+    Set lo = Nothing
+    On Error Resume Next
+    Set lo = modUtil.TxnTable()
+    On Error GoTo 0
+    If lo Is Nothing Then Exit Function
+    values = modLedger.ReadColumn(lo, COL_BATCH)
+    If Not IsArray(values) Then Exit Function
+    For i = 1 To UBound(values, 1)
+        If StrComp(modUtil.NzStr(values(i, 1)), batchId, vbTextCompare) = 0 Then
+            BatchIdExists = True
+            Exit Function
+        End If
+    Next i
+End Function
 
 Private Function ImportOneFile(ByVal path As String, ByVal batchId As String, _
                                ByRef totalImported As Long, _
@@ -356,12 +413,16 @@ Public Sub UndoImport()
     logTable.DataBodyRange.Cells(logRows(choice - 1), statusColumn).Value = _
         "Undone " & Format$(Now, "yyyy-mm-dd hh:nn")
     modUtil.FastMode False
+
+    ' If one side of an automatically detected transfer was in this batch, the
+    ' other side must stop being excluded from the reports.  Detection first
+    ' clears and rechecks its old automatic pairs.
+    modTransfers.DetectTransfers False
     Application.Calculate
     modReport.RefreshAll
 
-    MsgBox removed & " transaction(s) removed." & vbCrLf & vbCrLf & _
-           "Transfers that were paired with them are still marked as transfers; " & _
-           "run ""Find transfers"" again if that matters.", vbInformation, APP_NAME
+    MsgBox removed & " transaction(s) removed. Any transfer pairs affected by " & _
+           "the removal were checked again.", vbInformation, APP_NAME
     Exit Sub
 
 Fail:
@@ -373,6 +434,8 @@ Private Function IsUndoable(ByVal logTable As ListObject, ByVal rowIndex As Long
                             ByVal statusColumn As Long) As Boolean
     If Len(modUtil.NzStr(logTable.DataBodyRange.Cells(rowIndex, _
            modUtil.ColumnIndex(logTable, modAccounts.LG_BATCH)).Value)) = 0 Then Exit Function
+    If modUtil.NzNum(logTable.DataBodyRange.Cells(rowIndex, _
+           modUtil.ColumnIndex(logTable, modAccounts.LG_IMPORTED)).Value) <= 0 Then Exit Function
     IsUndoable = (Len(modUtil.NzStr(logTable.DataBodyRange.Cells(rowIndex, _
                                     statusColumn).Value)) = 0)
 End Function
