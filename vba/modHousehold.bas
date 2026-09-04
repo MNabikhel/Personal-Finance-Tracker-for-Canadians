@@ -8,15 +8,19 @@ Option Explicit
 
 Public Sub ToggleHouseholdMode()
     Dim wantCouple As Boolean
+    Dim secondName As String
     On Error GoTo Fail
 
     wantCouple = Not modUtil.IsCoupleMode()
 
     If wantCouple Then
-        If Len(modUtil.NzStr(modUtil.Setting(NR_PERSON_B))) = 0 Then
-            modUtil.SetSetting NR_PERSON_B, Trim$(InputBox( _
-                "Name of the second person:", APP_NAME, "Person B"))
-        End If
+        ' Show the stored name as the default instead of silently reviving a
+        ' sample or former household member when Couple mode is turned back on.
+        secondName = modUtil.NzStr(modUtil.Setting(NR_PERSON_B), "Person B")
+        secondName = Trim$(InputBox( _
+            "Name of the second person:", APP_NAME, secondName))
+        If Len(secondName) = 0 Then Exit Sub
+        modUtil.SetSetting NR_PERSON_B, secondName
         modUtil.SetSetting NR_MODE, MODE_COUPLE
     Else
         If MsgBox("Switch back to single mode?" & vbCrLf & vbCrLf & _

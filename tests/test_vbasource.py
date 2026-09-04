@@ -14,6 +14,7 @@ import os
 import re
 import sys
 import unittest
+from datetime import date
 from typing import Dict, List, Set
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -123,6 +124,72 @@ class CallTests(unittest.TestCase):
                           if call.module == call.qualifier], [])
 
 
+class ButtonTargetTests(unittest.TestCase):
+    """What a button or shortcut names as a string is invisible to the compiler
+    and only fails when clicked, so it is resolved here instead."""
+
+    TARGET = re.compile(r'"(mod\w+)\.(\w+)"')
+
+    def setUp(self):
+        self.targets = self.TARGET.findall(MODULES["modUI"].text)
+
+    def test_there_are_targets_to_check(self):
+        # Eight dashboard buttons, nine ledger buttons and four shortcuts,
+        # with some macros reachable from more than one place.
+        self.assertGreaterEqual(len(self.targets), 21)
+
+    def test_every_button_and_shortcut_runs_a_public_parameterless_sub(self):
+        for qualifier, name in self.targets:
+            with self.subTest(f"{qualifier}.{name}"):
+                self.assertIn(qualifier, MODULES)
+                procedure = MODULES[qualifier].procedures.get(name.lower())
+                self.assertIsNotNone(procedure, "no such procedure")
+                self.assertTrue(procedure.public)
+                self.assertEqual(procedure.kind.lower(), "sub")
+                self.assertEqual(procedure.required, 0,
+                                 "Excel calls a button's macro with no arguments")
+
+    def test_every_planned_button_is_present_with_the_right_action(self):
+        expected = {
+            "Import statements": "modImport.ImportStatements",
+            "Apply rules": "modRules.CategorizeUncategorized",
+            "Find transfers": "modTransfers.DetectTransfers",
+            "Needs a category": "modReport.ShowUncategorized",
+            "Refresh": "modReport.RefreshAll",
+            "Setup wizard": "modSetup.RunSetupWizard",
+            "Couple mode on/off": "modHousehold.ToggleHouseholdMode",
+            "Help": "modSetup.ShowHelp",
+            "Undo an import": "modImport.UndoImport",
+            "Teach a rule": "modRules.TeachRuleFromSelection",
+            "Set owner": "modHousehold.SetOwnerForSelection",
+            "Show all rows": "modReport.ClearLedgerFilters",
+            "Apply rules to all": "modRules.RecategorizeAll",
+            "Rebuild formulas": "modLedger.RepairFormulas",
+            "Start fresh": "modSetup.ClearAllTransactions",
+            "Back to dashboard": "modReport.GoToDashboard",
+        }
+        source = MODULES["modUI"].text
+        for label, target in expected.items():
+            with self.subTest(label):
+                self.assertIn(f'"{label}", "{target}"', source)
+
+    def test_the_button_rows_fit_above_the_first_content_row(self):
+        # Two rows of buttons hang from B3 on both sheets; the next row down
+        # holds the month selector on one and the table header on the other.
+        source = MODULES["modUI"].text
+
+        def constant(name):
+            return float(re.search(rf"Const {name} As \w+ = ([\d.]+)", source).group(1))
+
+        rows_needed = 2 * constant("BTN_HEIGHT") + constant("BTN_GAP")
+        built = workbook.build(date(2026, 9, 1))
+        for sheet in (workbook.SH_DASHBOARD, workbook.SH_TXN):
+            ws = built[sheet]
+            clearance = sum(ws.row_dimensions[r].height or 15 for r in (3, 4, 5))
+            with self.subTest(sheet):
+                self.assertGreaterEqual(clearance, rows_needed + 6)
+
+
 class ClassMemberTests(unittest.TestCase):
     """``txn.Amount`` has to be something clsTxn actually has."""
 
@@ -216,6 +283,12 @@ class BuilderAgreementTests(unittest.TestCase):
         self.assertLessEqual(set(self._constants("COL_").values()),
                              set(workbook.TXN_HEADERS))
 
+    def test_the_import_log_columns_are_all_addressed_by_header(self):
+        built = workbook.build(workbook.date(2026, 9, 1))
+        table = built[workbook.SH_LOG].tables["tblLog"]
+        headers = {column.name for column in table.tableColumns}
+        self.assertEqual(set(self._constants("LG_").values()), headers)
+
     def test_the_importer_fills_every_column_the_user_does_not(self):
         # A ledger column that is neither calculated, nor filled by the import,
         # nor left for the user on purpose would simply come out blank.
@@ -248,6 +321,72 @@ class BuilderAgreementTests(unittest.TestCase):
         for key, value in self._constants("CAT_").items():
             with self.subTest(key):
                 self.assertIn(value, categories)
+
+class WorkflowInvariantTests(unittest.TestCase):
+    """Cross-module ordering that can silently change financial results."""
+
+    def test_undo_rechecks_transfer_pairs_after_deleting_the_batch(self):
+        body = MODULES["modImport"].code
+        deleted = body.index("modLedger.DeleteRowsWhere")
+        rechecked = body.index("modTransfers.DetectTransfers False", deleted)
+        self.assertLess(deleted, rechecked)
+
+    def test_reapplying_all_rules_restores_transfer_detection(self):
+        body = MODULES["modRules"].code
+        self.assertIn("If includeTagged Then modTransfers.DetectTransfers False", body)
+
+    def test_biggest_merchants_nets_refunds_instead_of_adding_them(self):
+        body = MODULES["modReport"].code
+        self.assertIn("-modUtil.NzNum(views(i, 1))", body)
+        self.assertNotIn("Abs(modUtil.NzNum(views(i, 1)))", body)
+        self.assertIn("> 0 Then", body)
+
+    def test_fast_mode_off_is_safe_before_fast_mode_was_started(self):
+        body = MODULES["modUtil"].code
+        self.assertIn("If mFastDepth = 0 Then Exit Sub", body)
+        self.assertIn("Do While mFastDepth > 0", body)
+
+    def test_each_import_gets_a_collision_checked_batch_id(self):
+        body = MODULES["modImport"].code
+        allocated = body.index("batchId = NewBatchId(batchStamp, i)")
+        dispatched = min(body.index("modPdf.ImportOnePdf"),
+                         body.index("ImportOneFile(CStr(chosen(i))"))
+        self.assertLess(allocated, dispatched)
+        self.assertIn("Do While BatchIdExists(candidate)", body)
+        self.assertIn("Set lo = modUtil.TxnTable()", body)
+
+    def test_setup_removes_only_marked_sample_accounts_when_starting_fresh(self):
+        self.assertIn(
+            "modAccounts.ClearSampleAccounts",
+            MODULES["modSetup"].code,
+        )
+        accounts = MODULES["modAccounts"].text
+        self.assertIn('"Sample account", vbTextCompare', accounts)
+        self.assertIn("lo.DataBodyRange.Rows(i).ClearContents", accounts)
+
+    def test_starting_fresh_also_clears_the_macro_written_merchant_list(self):
+        source = MODULES["modSetup"].code
+        cleared = source.index("modLedger.ClearRowsKeepOne lo")
+        refreshed = source.index("modReport.RefreshTopMerchants", cleared)
+        self.assertLess(cleared, refreshed)
+
+    def test_dashboard_selectors_refresh_the_sorted_merchant_list(self):
+        source = MODULES["ThisWorkbook"].code
+        self.assertIn("Case SH_DASHBOARD", source)
+        self.assertIn("DashboardChanged Target", source)
+        self.assertGreaterEqual(source.count("modReport.RefreshTopMerchants"), 3)
+
+    def test_no_header_exports_reuse_the_account_saved_format(self):
+        source = MODULES["modImport"].code
+        detected = source.index("Set profile = modProfiles.DetectProfile(rows)")
+        saved = source.index("modProfiles.FindProfileByName", detected)
+        asked = source.index("modProfiles.AskForProfile(fileName)", saved)
+        self.assertLess(detected, saved)
+        self.assertLess(saved, asked)
+
+    def test_large_manual_category_pastes_are_not_silently_left_retaggable(self):
+        source = MODULES["ThisWorkbook"].code
+        self.assertNotIn("touched.Cells.Count >", source)
 
 
 if __name__ == "__main__":

@@ -42,7 +42,7 @@ through Excel's own PDF reader, and go through the same preview and the same
 duplicate check — see [Importing statements](#importing-statements) for what
 that needs and where it stops.
 
-**Sorts it out for you.** 194 seeded rules map merchant names onto 92
+**Sorts it out for you.** 196 seeded rules map merchant names onto 92
 categories in 14 groups. Anything the rules cannot place is left as
 `Uncategorized` and highlighted; select a row, press *Teach a rule*, and every
 future transaction like it is categorised automatically.
@@ -91,12 +91,35 @@ it. The setup wizard offers to delete it when you are ready for your own.
    sample data, and every button works against it.
 4. **Press *Setup wizard*.** It asks whether the workbook is for one person or
    two, your names, how you split shared costs, and your province — then offers
-   to clear the sample transactions.
+   to clear the sample transactions and sample account rows so your first
+   import cannot be routed into an example account.
 5. **List your accounts** on the *Accounts* sheet, one row per bank or card
    account. Put a snippet of the file name your bank produces in *File Name
    Contains* and imports will find the right account by themselves.
 6. **Download a statement from each bank — CSV or PDF — and press *Import
    statements*.**
+
+### If Excel complains when you open it
+
+- **A red bar: "SECURITY RISK — Microsoft has blocked macros from running
+  because the source of this file is untrusted."** Windows marks anything
+  downloaded from the internet, and Excel refuses macros in marked files. Close
+  the workbook, right-click the file, choose *Properties*, tick **Unblock**,
+  *OK*, and open it again. Alternatively keep it in a folder you have added as
+  a Trusted Location (*File › Options › Trust Center › Trust Center Settings ›
+  Trusted Locations*).
+- **A yellow bar: "Protected View"** — press *Enable Editing*, then *Enable
+  Content* on the bar that follows.
+- **"Excel cannot open the file because the file format or file extension is
+  not valid."** The download saved GitHub's web page rather than the workbook.
+  Use the *Download raw file* button on the file's GitHub page (or clone the
+  repository); the real file is about 540 KB and opens as a zip archive.
+- **"We found a problem with some content … Do you want us to try to
+  recover?"** means a part of the file is malformed. The build checks the
+  parts Excel is strict about — table headers, defined names, the VBA project
+  binary — and this should not happen with a current build; if you see it,
+  please open an issue with the Excel version and the text of the repair
+  report, and in the meantime rebuild from source (below).
 
 ### Buttons and shortcuts
 
@@ -155,6 +178,11 @@ up the description, whether amounts are signed or split into debit and credit
 columns, and a fragment of the header line to recognise the file by. If your
 bank changes its export or is not listed, fix the column numbers on that sheet
 and import again. No code changes, no rebuild.
+
+Exports from TD, CIBC, Simplii and Scotiabank do not carry a header that names
+their format. For those, the importer reuses the **Bank Format** from the
+account whose **File Name Contains** hint matches the download; if no account
+hint identifies it, it asks you to choose the format.
 
 Three things worth knowing:
 
@@ -225,6 +253,12 @@ account or any of them, using *Contains*, *Starts With*, *Ends With*, *Equals*,
 *Like* or *Word*, and can be limited to money in, money out, or an amount
 range. *Word* matches only at word boundaries, which is what keeps a fuel rule
 for `MOBIL` off Freedom Mobile.
+
+Refunds take care of themselves. A credit that no rule claims is tried once
+more against the merchant rules as though it were the purchase, so a return at
+Loblaws lands in *Groceries* as money in and nets off the spend. Deposits never
+get that far: the income and transfer rules go by the description and run
+first.
 
 Merchant names are cleaned before matching: payment-processor prefixes, store
 numbers, reference numbers and city/province suffixes are stripped, and
@@ -355,12 +389,15 @@ pip install -r requirements-dev.txt
 python3 -m unittest discover -s tests -t .
 ```
 
-121 tests, about 15 seconds. They fall into six groups:
+161 tests, about 30 seconds. They fall into six groups:
 
 - **Format conformance** (`test_ovba.py`) — the compression and encryption
   vectors from [MS-OVBA] §3.2 and §2.3.1.15–17, so the writer is checked
-  against Microsoft's own reference data, and the finished `vbaProject.bin` is
-  read back with `oletools` as an independent parser.
+  against Microsoft's own reference data; the finished `vbaProject.bin` is
+  read back with `oletools` as an independent parser; and the `dir` stream is
+  checked for the two things that make Excel drop a project it can otherwise
+  read — a class module recorded as a procedural one, and a reference list
+  that repeats the host's own libraries.
 - **VBA unit tests** (`test_vba.py`) — the pure functions (date and amount
   parsing, CSV splitting, merchant cleanup, rule matching, hashing) executed
   for real. There is no VBA interpreter available outside Excel, so
@@ -369,27 +406,32 @@ python3 -m unittest discover -s tests -t .
 - **End-to-end import** (`test_import.py`) — the shipped import path over the
   four sample bank exports, checking that every row comes back with the right
   date, sign, description, category, owner and duplicate key, that header rows
-  are skipped, and that re-importing adds nothing.
+  are skipped, that re-importing adds nothing, and that a refund follows its
+  purchase into the same category while deposits do not.
 - **PDF statement text** (`test_pdftext.py`) — the statement parser, in
   LibreOffice Basic, over text in the shapes Canadian statements take: a card
   with posting dates, `CR` credits and the year only in the header; a chequing
   account with a running balance and the date printed once per day; a
   Scotiabank card with reference numbers; a French statement; a January
-  statement with December lines. Getting the text out of the PDF is Excel's
-  part and cannot be run here, so `modPdf.bas` is covered by static analysis
-  only.
+  statement with December lines; plus payment-app and debit-interest wording
+  that must stay money out. Getting the text out of the PDF is Excel's part
+  and cannot be run here, so `modPdf.bas` is covered by static analysis only.
 - **The built workbook** (`test_workbook.py`) — the package is a valid zip with
   the VBA project declared and macro-enabled content types; the sheets, tables,
-  columns and named ranges the macros reference all exist; and the workbook is
+  columns and named ranges the macros reference all exist; table headers match
+  their table parts and names and validations are stored the way Excel stores
+  them (no leading `=`); and the workbook is
   opened in LibreOffice Calc, recalculated, and its dashboard, reports and
   household figures compared against the same totals computed independently in
-  Python.
+  Python. Alternate months, personal views, chart sources, category budgets
+  and a completely empty ledger are checked too.
 - **Static analysis** (`test_vbasource.py`) — Excel is the only thing that
   compiles this code and it is not available here, so these tests stand in for
   the compiler. Every qualified and unqualified call must resolve to a public
   procedure taking that many arguments, every constant and class member must
-  exist, and the sheet, table, column and named-range constants must be the
-  ones the builder actually writes.
+  exist, the sheet, table, column and named-range constants must be the ones
+  the builder actually writes, and every macro a button or shortcut names must
+  be a public parameterless Sub with room on the sheet for the button bar.
 
 LibreOffice is doing real work here: it is a completely separate implementation
 of both OOXML and the Basic dialect VBA is derived from, so agreeing with it is

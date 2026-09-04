@@ -12,14 +12,18 @@ Public Const AC_TYPE As String = "Type"
 Public Const AC_OWNER As String = "Owner"
 Public Const AC_FORMAT As String = "Bank Format"
 Public Const AC_FILEMATCH As String = "File Name Contains"
-Public Const AC_INCLUDE As String = "Include in Household"
 Public Const AC_NOTES As String = "Notes"
 
 ' Import Log column headers
 Public Const LG_WHEN As String = "When"
 Public Const LG_BATCH As String = "Batch"
 Public Const LG_FILE As String = "File"
+Public Const LG_FORMAT As String = "Format"
+Public Const LG_ACCOUNT As String = "Account"
+Public Const LG_READ As String = "Rows read"
 Public Const LG_IMPORTED As String = "Imported"
+Public Const LG_DUPLICATES As String = "Duplicates"
+Public Const LG_UNREADABLE As String = "Unreadable"
 Public Const LG_STATUS As String = "Status"
 
 Public Function AccountsTable() As ListObject
@@ -44,16 +48,17 @@ End Function
 
 Public Function AccountNames() As Variant
     Dim lo As ListObject, i As Long, names() As String, found As Long
+    Dim total As Long
+    total = AccountRowCount()
+    If total = 0 Then Exit Function
     Set lo = AccountsTable()
-    ReDim names(0 To 0)
+    ReDim names(0 To total - 1)
     For i = 1 To modUtil.BodyRows(lo)
         If Len(AccountValue(i, AC_NAME)) > 0 Then
-            If found > 0 Then ReDim Preserve names(0 To found)
             names(found) = AccountValue(i, AC_NAME)
             found = found + 1
         End If
     Next i
-    If found = 0 Then Exit Function
     AccountNames = names
 End Function
 
@@ -99,9 +104,9 @@ Public Function ResolveAccount(ByVal fileName As String, _
                                ByVal profile As clsProfile) As String
     Dim lo As ListObject
     Dim i As Long
-    Dim hint As String
+    Dim hintRow As Long
     Dim profileName As String
-    Dim candidates() As String
+    Dim candidate As String
     Dim candidateCount As Long
     Dim names As Variant
     Dim choice As Long
@@ -109,28 +114,23 @@ Public Function ResolveAccount(ByVal fileName As String, _
     Set lo = AccountsTable()
     profileName = profile.Name
 
-    For i = 1 To modUtil.BodyRows(lo)
-        hint = AccountValue(i, AC_FILEMATCH)
-        If Len(hint) > 0 And Len(AccountValue(i, AC_NAME)) > 0 Then
-            If InStr(1, fileName, hint, vbTextCompare) > 0 Then
-                ResolveAccount = AccountValue(i, AC_NAME)
-                Exit Function
-            End If
-        End If
-    Next i
+    hintRow = BestFileHintRow(fileName)
+    If hintRow > 0 Then
+        ResolveAccount = AccountValue(hintRow, AC_NAME)
+        Exit Function
+    End If
 
-    ReDim candidates(0 To 0)
+    ' The format settles it only when exactly one account uses it.
     For i = 1 To modUtil.BodyRows(lo)
         If Len(AccountValue(i, AC_NAME)) > 0 Then
             If StrComp(AccountValue(i, AC_FORMAT), profileName, vbTextCompare) = 0 Then
-                If candidateCount > 0 Then ReDim Preserve candidates(0 To candidateCount)
-                candidates(candidateCount) = AccountValue(i, AC_NAME)
+                candidate = AccountValue(i, AC_NAME)
                 candidateCount = candidateCount + 1
             End If
         End If
     Next i
     If candidateCount = 1 Then
-        ResolveAccount = candidates(0)
+        ResolveAccount = candidate
         Exit Function
     End If
 
@@ -145,6 +145,45 @@ Public Function ResolveAccount(ByVal fileName As String, _
                                "Accounts sheet to skip this question next time.)", names)
     If choice = 0 Then Exit Function
     ResolveAccount = names(choice - 1)
+End Function
+
+' Lets the importer use an account's saved format before it has parsed the
+' file.  That is how recurring no-header TD/CIBC/Scotia-style downloads avoid
+' asking for the same format every month.
+Public Function FormatForFileName(ByVal fileName As String) As String
+    Dim rowIndex As Long
+    rowIndex = BestFileHintRow(fileName)
+    If rowIndex > 0 Then FormatForFileName = AccountValue(rowIndex, AC_FORMAT)
+End Function
+
+' A more specific snippet ("rbc-visa") wins over a broad one ("rbc").
+' Equal best matches are ambiguous and deliberately fall through to a picker.
+Private Function BestFileHintRow(ByVal fileName As String) As Long
+    Dim lo As ListObject
+    Dim i As Long
+    Dim hint As String
+    Dim bestLength As Long
+    Dim bestRow As Long
+    Dim tied As Boolean
+
+    Set lo = AccountsTable()
+    For i = 1 To modUtil.BodyRows(lo)
+        hint = AccountValue(i, AC_FILEMATCH)
+        If Len(hint) > 0 And Len(AccountValue(i, AC_NAME)) > 0 Then
+            If InStr(1, fileName, hint, vbTextCompare) > 0 Then
+                If Len(hint) > bestLength Then
+                    bestLength = Len(hint)
+                    bestRow = i
+                    tied = False
+                ElseIf Len(hint) = bestLength And _
+                       StrComp(AccountValue(bestRow, AC_NAME), _
+                               AccountValue(i, AC_NAME), vbTextCompare) <> 0 Then
+                    tied = True
+                End If
+            End If
+        End If
+    Next i
+    If bestLength > 0 And Not tied Then BestFileHintRow = bestRow
 End Function
 
 Public Function CreateAccountInteractively(ByVal profile As clsProfile) As String
@@ -197,8 +236,27 @@ Public Sub AddAccount(ByVal accountName As String, ByVal institution As String, 
     lo.DataBodyRange.Cells(rowIndex, modUtil.ColumnIndex(lo, AC_TYPE)).Value = accountType
     lo.DataBodyRange.Cells(rowIndex, modUtil.ColumnIndex(lo, AC_OWNER)).Value = owner
     lo.DataBodyRange.Cells(rowIndex, modUtil.ColumnIndex(lo, AC_FORMAT)).Value = bankFormat
-    lo.DataBodyRange.Cells(rowIndex, modUtil.ColumnIndex(lo, AC_INCLUDE)).Value = "Yes"
 End Sub
+
+' The setup wizard ships with example accounts so every report has context,
+' but a user who accepts "start fresh" needs a genuinely clean account list.
+' Only rows still marked as samples are cleared; anything the user added or
+' renamed and re-noted is preserved.
+Public Function ClearSampleAccounts() As Long
+    Dim lo As ListObject
+    Dim i As Long
+    Dim notesColumn As Long
+
+    Set lo = AccountsTable()
+    notesColumn = modUtil.ColumnIndex(lo, AC_NOTES)
+    For i = 1 To modUtil.BodyRows(lo)
+        If StrComp(modUtil.NzStr(lo.DataBodyRange.Cells(i, notesColumn).Value), _
+                   "Sample account", vbTextCompare) = 0 Then
+            lo.DataBodyRange.Rows(i).ClearContents
+            ClearSampleAccounts = ClearSampleAccounts + 1
+        End If
+    Next i
+End Function
 
 Private Function FirstEmptyRow(ByVal lo As ListObject) As Long
     Dim i As Long
@@ -236,15 +294,16 @@ Public Sub LogBatch(ByVal batchId As String, ByVal fileName As String, _
     End If
 
     With lo.DataBodyRange
-        .Cells(rowIndex, 1).Value = Now
-        .Cells(rowIndex, 1).NumberFormat = "yyyy-mm-dd hh:mm"
-        .Cells(rowIndex, 2).Value = batchId
-        .Cells(rowIndex, 3).Value = fileName
-        .Cells(rowIndex, 4).Value = profileName
-        .Cells(rowIndex, 5).Value = accountName
-        .Cells(rowIndex, 6).Value = rowsRead
-        .Cells(rowIndex, 7).Value = imported
-        .Cells(rowIndex, 8).Value = duplicates
-        .Cells(rowIndex, 9).Value = unreadable
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_WHEN)).Value = Now
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_WHEN)).NumberFormat = _
+            "yyyy-mm-dd hh:mm"
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_BATCH)).Value = batchId
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_FILE)).Value = fileName
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_FORMAT)).Value = profileName
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_ACCOUNT)).Value = accountName
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_READ)).Value = rowsRead
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_IMPORTED)).Value = imported
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_DUPLICATES)).Value = duplicates
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_UNREADABLE)).Value = unreadable
     End With
 End Sub

@@ -72,6 +72,19 @@ Public Function AllProfiles() As Collection
     Next i
 End Function
 
+Public Function FindProfileByName(ByVal profileName As String) As clsProfile
+    Dim profiles As Collection
+    Dim i As Long
+    If Len(Trim$(profileName)) = 0 Then Exit Function
+    Set profiles = AllProfiles()
+    For i = 1 To profiles.Count
+        If StrComp(profiles.Item(i).Name, profileName, vbTextCompare) = 0 Then
+            Set FindProfileByName = profiles.Item(i)
+            Exit Function
+        End If
+    Next i
+End Function
+
 Public Function ProfileTitles(ByVal profiles As Collection) As Variant
     Dim names() As String
     Dim i As Long

@@ -149,6 +149,38 @@ Public Function FirstMatch(ByVal rules As Collection, ByVal merchant As String, 
     Next i
 End Function
 
+' A refund is money coming back from a merchant you pay, and card statements
+' carry one on most months.  A money-in row that no rule claims is therefore
+' tried once more against the merchant-name rules as though it were the
+' purchase, so the refund lands in the same category and nets off the spend.
+' Income and transfer rules go by the description and are tried first, so a
+' deposit never gets here.
+Public Function RefundMatch(ByVal rules As Collection, ByVal merchant As String, _
+                            ByVal description As String, ByVal accountName As String, _
+                            ByVal amount As Double) As clsRule
+    Dim i As Long
+
+    If amount <= 0 Then Exit Function
+    For i = 1 To rules.Count
+        If rules.Item(i).IsMerchantPaymentRule() Then
+            If rules.Item(i).Matches(merchant, description, accountName, -amount) Then
+                Set RefundMatch = rules.Item(i)
+                Exit Function
+            End If
+        End If
+    Next i
+End Function
+
+' The rule for a row: a direct match, failing that the refund reading.
+Public Function RuleFor(ByVal rules As Collection, ByVal merchant As String, _
+                        ByVal description As String, ByVal accountName As String, _
+                        ByVal amount As Double) As clsRule
+    Set RuleFor = FirstMatch(rules, merchant, description, accountName, amount)
+    If RuleFor Is Nothing Then
+        Set RuleFor = RefundMatch(rules, merchant, description, accountName, amount)
+    End If
+End Function
+
 '--- Applying rules ---------------------------------------------------------
 
 Public Sub CategorizeUncategorized(Optional ByVal interactive As Boolean = True)
@@ -210,12 +242,22 @@ Private Sub ApplyRules(ByVal includeTagged As Boolean, ByVal interactive As Bool
 
     For i = 1 To rowCount
         If Len(modUtil.NzStr(amounts(i, 1))) > 0 Then
+            ' "Apply rules to all" means the current rules are authoritative:
+            ' a rule that was removed or disabled must leave the row needing a
+            ' category, not silently preserve the old answer.  Manual choices
+            ' remain above the rules.
+            If includeTagged And _
+               StrComp(modUtil.NzStr(tags(i, 1)), TAG_MANUAL, vbTextCompare) <> 0 Then
+                categories(i, 1) = CAT_UNCATEGORIZED
+                tags(i, 1) = TAG_IMPORT
+                changed = True
+            End If
             If Retaggable(modUtil.NzStr(categories(i, 1)), _
                           modUtil.NzStr(tags(i, 1)), includeTagged) Then
-                Set rule = FirstMatch(rules, modUtil.NzStr(merchants(i, 1)), _
-                                      modUtil.NzStr(descriptions(i, 1)), _
-                                      modUtil.NzStr(accounts(i, 1)), _
-                                      modUtil.NzNum(amounts(i, 1)))
+                Set rule = RuleFor(rules, modUtil.NzStr(merchants(i, 1)), _
+                                   modUtil.NzStr(descriptions(i, 1)), _
+                                   modUtil.NzStr(accounts(i, 1)), _
+                                   modUtil.NzNum(amounts(i, 1)))
                 If Not rule Is Nothing Then
                     categories(i, 1) = rule.Category
                     tags(i, 1) = TAG_RULE
@@ -245,6 +287,10 @@ Private Sub ApplyRules(ByVal includeTagged As Boolean, ByVal interactive As Bool
         SaveHits hits
     End If
     modUtil.FastMode False
+
+    ' The all-rules pass deliberately reset prior automatic transfer tags.
+    ' Put valid pairs back before reporting how many rows still need attention.
+    If includeTagged Then modTransfers.DetectTransfers False
 
     If interactive Then
         MsgBox matched & " transaction(s) were categorised." & vbCrLf & _

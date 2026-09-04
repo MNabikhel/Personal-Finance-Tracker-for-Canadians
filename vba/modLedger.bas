@@ -183,6 +183,20 @@ Public Function DeleteRowsWhere(ByVal lo As ListObject, ByVal header As String, 
     DeleteRowsWhere = removed
 End Function
 
+' Empties a table through its own ListRows collection and leaves one blank
+' body row.  Deleting an arbitrary worksheet range that happens to overlap a
+' table is interpreted differently by Excel versions and can shift nearby
+' cells instead of resizing the table.
+Public Sub ClearRowsKeepOne(ByVal lo As ListObject)
+    Dim i As Long
+
+    For i = modUtil.BodyRows(lo) To 2 Step -1
+        lo.ListRows(i).Delete
+    Next i
+    If modUtil.BodyRows(lo) = 0 Then lo.ListRows.Add
+    lo.DataBodyRange.Rows(1).ClearContents
+End Sub
+
 ' Reads one column of the ledger into a 1-based array, or an empty Variant when
 ' the ledger is empty.
 Public Function ReadColumn(ByVal lo As ListObject, ByVal header As String) As Variant

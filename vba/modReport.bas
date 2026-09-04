@@ -63,7 +63,7 @@ Public Sub RefreshTopMerchants()
                 merchant = modUtil.NzStr(merchants(i, 1), "(no merchant)")
                 modUtil.PutVal totals, merchant, _
                     CDbl(modUtil.GetVal(totals, merchant, 0)) + _
-                    Abs(modUtil.NzNum(views(i, 1)))
+                    -modUtil.NzNum(views(i, 1))
             End If
         End If
     Next i
@@ -78,9 +78,14 @@ Public Sub RefreshTopMerchants()
     For i = 1 To UBound(merchants, 1)
         merchant = modUtil.NzStr(merchants(i, 1), "(no merchant)")
         If modUtil.HasKey(totals, merchant) Then
-            count = count + 1
-            names(count) = merchant
-            values(count) = CDbl(modUtil.GetVal(totals, merchant, 0))
+            ' Refunds are positive expense rows and must reduce what was
+            ' spent at the merchant.  A fully refunded (or net-credit)
+            ' merchant is not a "biggest spend".
+            If CDbl(modUtil.GetVal(totals, merchant, 0)) > 0 Then
+                count = count + 1
+                names(count) = merchant
+                values(count) = CDbl(modUtil.GetVal(totals, merchant, 0))
+            End If
             totals.Remove merchant
         End If
     Next i

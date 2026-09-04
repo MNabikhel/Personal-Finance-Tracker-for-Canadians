@@ -7,7 +7,7 @@ Option Explicit
 '=============================================================================
 
 Public Const APP_NAME As String = "Canadian Finance Tracker"
-Public Const APP_VERSION As String = "1.1.0"
+Public Const APP_VERSION As String = "1.1.1"
 
 ' Worksheet names
 Public Const SH_DASHBOARD As String = "Dashboard"
@@ -69,6 +69,8 @@ Public Const NR_PROVINCE As String = "Province"
 Public Const NR_CONFIGURED As String = "Configured"
 Public Const NR_TRANSFER_DAYS As String = "TransferWindowDays"
 Public Const NR_DUPES As String = "SkipDuplicates"
+Public Const NR_REPORT_MONTH As String = "ReportMonth"
+Public Const NR_REPORT_VIEW As String = "ReportView"
 
 ' The block of the Dashboard that only means anything to two people
 Public Const NR_COUPLE_BLOCK As String = "CoupleBlock"

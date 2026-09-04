@@ -26,6 +26,7 @@ from openpyxl.workbook.defined_name import DefinedName
 from . import data, sample
 
 APP_NAME = "Canadian Finance Tracker"       # matches modConst.APP_NAME
+APP_VERSION = "1.1.1"                       # matches modConst.APP_VERSION
 
 # --- Look and feel ----------------------------------------------------------
 
@@ -273,8 +274,10 @@ def add_table(ws: Worksheet, name: str, ref: str, style: str = "TableStyleMedium
 
 def validate(ws: Worksheet, ranges: Iterable[str], source: str,
              allow_blank: bool = True, prompt: str = None):
-    dv = DataValidation(type="list", formula1=source, allow_blank=allow_blank,
-                        showErrorMessage=False)
+    # The file format stores a validation's formula without the leading "="
+    # a user would type; Excel's own files never carry one.
+    dv = DataValidation(type="list", formula1=source.lstrip("="),
+                        allow_blank=allow_blank, showErrorMessage=False)
     if prompt:
         dv.prompt = prompt
         dv.showInputMessage = True
@@ -285,7 +288,10 @@ def validate(ws: Worksheet, ranges: Iterable[str], source: str,
 
 
 def name(wb: Workbook, key: str, refers_to: str):
-    wb.defined_names[key] = DefinedName(key, attr_text=refers_to)
+    # As with validations: a defined name's text is the formula without "=".
+    # "=tblCategories[Category]" written verbatim is what Excel reports as a
+    # damaged named range when it opens the file.
+    wb.defined_names[key] = DefinedName(key, attr_text=refers_to.lstrip("="))
 
 
 def quoted(sheet_name: str) -> str:
@@ -343,7 +349,7 @@ def build(today: Optional[date] = None) -> Workbook:
     wb.properties.created = datetime.combine(today, time())
     wb.properties.modified = wb.properties.created
 
-    build_dashboard(wb, report_month(today))
+    build_dashboard(wb, report_month(today), records)
     build_transactions(wb, records)
     build_accounts(wb)
     build_categories(wb)
@@ -395,16 +401,22 @@ DASH_KPIS_RIGHT = [
     ("Essential spending", '-SUMIFS(tblTxn[View Amount],tblTxn[Month],ReportMonth,tblTxn[Type],"Expense",tblTxn[Essential],"Yes")', MONEY),
     ("Discretionary spending", "C10-F9", MONEY),
     ("Average spend per day", 'IFERROR(C10/DAY(EOMONTH(DATE(VALUE(LEFT(ReportMonth,4)),VALUE(RIGHT(ReportMonth,2)),1),0)),"")', MONEY),
-    ("Transactions this month", "COUNTIFS(tblTxn[Month],ReportMonth)", "#,##0"),
+    ("Transactions this month",
+     'COUNTIFS(tblTxn[Month],ReportMonth,tblTxn[View Amount],"<>0")', "#,##0"),
     # Blank until the user actually sets budgets, rather than claiming they are
-    # thousands of dollars over a budget of zero.
+    # thousands of dollars over a budget of zero. Category budgets are
+    # household amounts, so comparing one person's share with all of them
+    # would be misleading.
     ("Left in monthly budget",
-     'IF(SUM(tblCategories[Monthly Budget])=0,"",'
-     'SUM(tblCategories[Monthly Budget])-C10)', MONEY),
+     'IF(OR(ReportView<>"Household",'
+     'SUMIFS(Budget!$E$6:$E$125,Budget!$D$6:$D$125,"Expense")=0),"",'
+     'SUMIFS(Budget!$G$6:$G$125,Budget!$D$6:$D$125,"Expense"))',
+     MONEY),
 ]
 
 
-def build_dashboard(wb: Workbook, opening_month: str):
+def build_dashboard(wb: Workbook, opening_month: str,
+                    records: Sequence[sample.Txn]):
     ws = wb.create_sheet(SH_DASHBOARD)
     ws.sheet_view.showGridLines = False
     widths(ws, {"A": 2, "B": 26, "C": 15, "D": 2, "E": 26, "F": 15, "G": 2,
@@ -416,8 +428,11 @@ def build_dashboard(wb: Workbook, opening_month: str):
     put(ws, "B1", "Canadian Finance Tracker", TITLE_FONT)
     put(ws, "B2", "Import your bank and credit card exports, then read your month "
                   "here. Everything stays in this file - nothing is uploaded.", SUB_FONT)
-    ws.row_dimensions[3].height = 22
-    ws.row_dimensions[4].height = 22
+    # Rows 3-5 carry the two rows of macro buttons (2 x 26pt plus a 6pt
+    # gap = 58pt from the top of B3); 70pt keeps them clear of row 6.
+    ws.row_dimensions[3].height = 24
+    ws.row_dimensions[4].height = 24
+    ws.row_dimensions[5].height = 22
 
     put(ws, "B6", "Report month", BOLD)
     put(ws, "C6", opening_month, LABEL_FONT, align="center",
@@ -470,8 +485,12 @@ def build_dashboard(wb: Workbook, opening_month: str):
     put(ws, f"C{merchants_top + 1}", "Spent", BOLD, align="right")
     for row in range(merchants_top + 2, merchants_top + 12):
         ws[f"C{row}"].number_format = MONEY
+    for offset, (merchant, amount) in enumerate(
+            opening_top_merchants(records, opening_month)):
+        put(ws, f"B{merchants_top + 2 + offset}", merchant, LABEL_FONT)
+        put(ws, f"C{merchants_top + 2 + offset}", amount, fmt=MONEY, align="right")
     put(ws, f"E{merchants_top + 2}",
-        "This list is written by the Refresh button (it needs macros).",
+        "The Refresh button keeps this list current (it needs macros).",
         NOTE_FONT, wrap=True)
     ws.merge_cells(f"E{merchants_top + 2}:I{merchants_top + 4}")
 
@@ -522,9 +541,26 @@ def build_dashboard(wb: Workbook, opening_month: str):
     # figures, so the printed Dashboard is the figures.
     printing(ws, f"B1:I{DASH_COUPLE_LAST}")
 
-    # Anchors used by the macros.
+    # Anchor used by the macros.
     ws["B3"].value = None
-    ws["B33"].value = None
+
+
+def opening_top_merchants(records: Sequence[sample.Txn],
+                          opening_month: str) -> list[tuple[str, float]]:
+    """The sample view before Workbook_Open refreshes its macro-written list."""
+    category_type = {row[0]: row[2] for row in data.CATEGORIES}
+    totals: dict[str, float] = {}
+    for txn in records:
+        if txn.month != opening_month:
+            continue
+        if category_type.get(txn.category, "Expense") != "Expense":
+            continue
+        totals[txn.merchant or "(no merchant)"] = (
+            totals.get(txn.merchant or "(no merchant)", 0) - txn.amount
+        )
+    positive = ((merchant, round(amount, 2))
+                for merchant, amount in totals.items() if amount > 0)
+    return sorted(positive, key=lambda pair: pair[1], reverse=True)[:10]
 
 
 # --- Transactions -----------------------------------------------------------
@@ -541,8 +577,11 @@ def build_transactions(wb: Workbook, records: Sequence[sample.Txn]):
     put(ws, "B2", "One row per transaction. Money out is negative, money in is "
                   "positive. Grey columns are calculated - type in the white ones.",
         SUB_FONT)
-    ws.row_dimensions[3].height = 22
-    ws.row_dimensions[4].height = 22
+    # Rows 3-5 carry the two rows of macro buttons (2 x 26pt plus a 6pt
+    # gap = 58pt from the top of B3); 70pt keeps them clear of row 6.
+    ws.row_dimensions[3].height = 24
+    ws.row_dimensions[4].height = 24
+    ws.row_dimensions[5].height = 22
 
     header_row = TXN_FIRST_ROW
     table_header(ws, header_row, TXN_HEADERS)
@@ -639,37 +678,37 @@ def build_accounts(wb: Workbook):
     ws = wb.create_sheet(SH_ACCOUNTS)
     ws.sheet_view.showGridLines = False
     widths(ws, {"A": 2, "B": 26, "C": 20, "D": 14, "E": 14, "F": 28, "G": 24,
-                "H": 18, "I": 30})
+                "H": 30})
 
     put(ws, "B1", "Accounts", TITLE_FONT)
     put(ws, "B2", "One row per bank or card account. \"File Name Contains\" lets the "
                   "importer recognise a download without asking.", SUB_FONT)
 
     headers = ["Account", "Institution", "Type", "Owner", "Bank Format",
-               "File Name Contains", "Include in Household", "Notes"]
+               "File Name Contains", "Notes"]
     table_header(ws, 4, headers)
 
     rows = [
         (sample.ACCOUNT_ALEX, "RBC Royal Bank", "Chequing", sample.PERSON_A,
-         "RBC Chequing/Savings/Card", "rbc-chequing-alex", "Yes", "Sample account"),
+         "RBC Chequing/Savings/Card", "rbc-chequing-alex", "Sample account"),
         (sample.ACCOUNT_SAM, "Tangerine", "Chequing", sample.PERSON_B,
-         "Tangerine", "tangerine-chequing-sam", "Yes", "Sample account"),
+         "Tangerine", "tangerine-chequing-sam", "Sample account"),
         (sample.ACCOUNT_JOINT, "BMO", "Chequing", "Joint", "BMO",
-         "bmo-joint-chequing", "Yes", "Sample account"),
+         "bmo-joint-chequing", "Sample account"),
         (sample.ACCOUNT_CARD, "American Express", "Credit Card", "Joint",
-         "Amex Canada", "amex-cobalt-joint", "Yes", "Sample account"),
-        ("", "", "", "", "", "", "", ""),
-        ("", "", "", "", "", "", "", ""),
-        ("", "", "", "", "", "", "", ""),
-        ("", "", "", "", "", "", "", ""),
+         "Amex Canada", "amex-cobalt-joint", "Sample account"),
+        ("", "", "", "", "", "", ""),
+        ("", "", "", "", "", "", ""),
+        ("", "", "", "", "", "", ""),
+        ("", "", "", "", "", "", ""),
     ]
     for offset, row_values in enumerate(rows):
         for index, value in enumerate(row_values):
             ws.cell(row=5 + offset, column=2 + index, value=value or None)
 
-    add_table(ws, "tblAccounts", f"B4:I{4 + len(rows)}")
+    add_table(ws, "tblAccounts", f"B4:H{4 + len(rows)}")
     ws.freeze_panes = "B5"
-    printing(ws, f"B1:I{4 + len(rows)}", landscape=True, titles="4:4")
+    printing(ws, f"B1:H{4 + len(rows)}", landscape=True, titles="4:4")
 
 
 def build_categories(wb: Workbook):
@@ -793,7 +832,8 @@ CASHFLOW_ROWS = [
     ("Savings rate", '=IFERROR(({col}{income}-{col}{spend})/{col}{income},"")', PERCENT),
     ("Essential spending", '=-SUMIFS(tblTxn[View Amount],tblTxn[Month],{month},tblTxn[Type],"Expense",tblTxn[Essential],"Yes")', MONEY),
     ("Discretionary spending", "={col}{spend}-{col}{essential}", MONEY),
-    ("Transactions", "=COUNTIFS(tblTxn[Month],{month})", "#,##0"),
+    ("Transactions",
+     '=COUNTIFS(tblTxn[Month],{month},tblTxn[View Amount],"<>0")', "#,##0"),
 ]
 
 
@@ -913,7 +953,8 @@ def build_budget(wb: Workbook):
                   "page compares it with what actually happened in the report month "
                   "chosen on the Dashboard. Income and spending are both shown as "
                   "positive numbers, and a negative Difference always means the month "
-                  "went the wrong way.", SUB_FONT)
+                  "went the wrong way. In a personal View, actuals still follow that "
+                  "person but household budget comparisons stay blank.", SUB_FONT)
     put(ws, "B3", "Month shown", BOLD)
     put(ws, "C3", "=ReportMonth", Font(bold=True, color=ACCENT), align="center")
 
@@ -937,7 +978,8 @@ def build_budget(wb: Workbook):
         # same footing so "more than budgeted" always reads the same way.
         put(ws, f"K{row}", f'=IF($D{row}="Income",1,-1)')
         put(ws, f"E{row}",
-            f'=IF($B{row}="","",IFERROR(INDEX(tblCategories[Monthly Budget],'
+            f'=IF(OR($B{row}="",ReportView<>"Household"),"",'
+            f'IFERROR(INDEX(tblCategories[Monthly Budget],'
             f'MATCH($B{row},tblCategories[Category],0)),0))', fmt=MONEY)
         put(ws, f"F{row}",
             f'=IF($B{row}="","",SUMIFS(tblTxn[View Amount],tblTxn[Month],'
@@ -1059,6 +1101,8 @@ def build_household(wb: Workbook):
         f'tblTxn[Type],"Expense",tblTxn[Paid By],PersonA)+SUMIFS(tblTxn[Share A],'
         f'tblTxn[Month],{year_criteria},tblTxn[Type],"Expense",tblTxn[Paid By],PersonB)',
         BOLD, fmt=MONEY, align="right")
+    # The other person's balance is the mirror image, as on the monthly row.
+    put(ws, "D24", "=-C24", BOLD, fmt=MONEY, align="right")
 
     put(ws, "G5", "How the split works", BOLD)
     put(ws, "G6",
@@ -1259,7 +1303,7 @@ SETTINGS_ROWS = [
     ("Skip duplicates on import", "Yes",
      "Re-importing an overlapping statement adds only the new rows."),
     ("Currency", "CAD", "Everything is treated as Canadian dollars."),
-    ("Version", "1.0.0", "Workbook version."),
+    ("Version", APP_VERSION, "Workbook version."),
 ]
 
 
@@ -1366,7 +1410,7 @@ HELP_SECTIONS = [
         "and tick Unblock first.",
         "2. Press \"Setup wizard\" on the Dashboard: it asks who the workbook is for, "
         "your names, how joint costs are split and your province, then offers to "
-        "delete the sample data.",
+        "delete the sample transactions and sample account rows.",
         "3. List your accounts on the Accounts sheet - one row per bank or card "
         "account. Fill in \"File Name Contains\" with a snippet of the file name your "
         "bank produces so imports find the right account by themselves.",
@@ -1389,6 +1433,8 @@ HELP_SECTIONS = [
         "year comes from the statement date on the page.",
         "Either way you are shown the first rows it read and asked to confirm before "
         "anything is written.",
+        "A CSV with no identifying header reuses the Bank Format from the account "
+        "whose File Name Contains hint matches it; otherwise you pick the format.",
         "Money leaving an account is stored as a negative number and money arriving "
         "as a positive one, whichever way your bank writes it.",
         "Re-importing a statement that overlaps one you already loaded adds only the "
@@ -1402,6 +1448,8 @@ HELP_SECTIONS = [
     ("Categories and rules", [
         "Rules turn merchant names into categories. They run in Priority order and "
         "the first match wins, so specific rules should have a lower number.",
+        "A refund from a shop the rules know lands in the same category as the "
+        "purchase, as money in, so it nets off what you spent there.",
         "Anything the rules cannot place lands in Uncategorized and is highlighted in "
         "red. Press \"Needs a category\" to filter to just those rows.",
         "Select a row and press \"Teach a rule\" to create a rule from it. From then "
@@ -1555,7 +1603,6 @@ def add_validation(wb: Workbook):
     validate(ws, ["D5:D200"], "=AccountTypeList")
     validate(ws, ["E5:E200"], "=OwnerList")
     validate(ws, ["F5:F200"], "=FormatList")
-    validate(ws, ["H5:H200"], "=YesNoList")
 
     ws = wb[SH_CATEGORIES]
     last_category = 4 + len(data.CATEGORIES) + 100

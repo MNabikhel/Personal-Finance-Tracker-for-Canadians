@@ -73,6 +73,11 @@ Public Function ImportOnePdf(ByVal path As String, ByVal batchId As String, _
                                   APP_NAME, CStr(Year(Date))))
         If Not IsNumeric(yearText) Then Exit Function
         anchorYear = CLng(Val(yearText))
+        If anchorYear < 1900 Or anchorYear > 2200 Then
+            MsgBox "Enter the four-digit statement year (for example " & _
+                   Year(Date) & ").", vbExclamation, APP_NAME
+            Exit Function
+        End If
     End If
 
     kind = modPdfText.DetectKind(lines, anchorYear, anchorMonth)
@@ -81,10 +86,17 @@ Public Function ImportOnePdf(ByVal path As String, ByVal batchId As String, _
                                                readCount, badCount)
         If records.Count = 0 Then
             If triedBoth Then
-                MsgBox "No transactions could be read from " & fileName & "." & vbCrLf & _
-                       vbCrLf & "The lines on the page do not start with a date and end " & _
-                       "with an amount. Import the CSV version of this statement instead.", _
-                       vbExclamation, APP_NAME
+                If answer = vbNo Then
+                    MsgBox "Read as a " & LCase$(kind) & " statement, " & fileName & _
+                           " has no lines that look like transactions, so it was " & _
+                           "skipped. Import it again and accept the first reading, or " & _
+                           "use the CSV version of the statement.", vbExclamation, APP_NAME
+                Else
+                    MsgBox "No transactions could be read from " & fileName & "." & _
+                           vbCrLf & vbCrLf & "The lines on the page do not start with " & _
+                           "a date and end with an amount. Import the CSV version of " & _
+                           "this statement instead.", vbExclamation, APP_NAME
+                End If
                 Exit Function
             End If
             triedBoth = True
@@ -152,15 +164,27 @@ End Function
 ' how says which reader managed it.
 Private Function ExtractLines(ByVal path As String, ByRef how As String) As Collection
     Dim lines As Collection
+    Dim fallback As Collection
 
     modUtil.FastMode True
     Set lines = LinesViaPowerQuery(path)
     If lines Is Nothing Then
         Set lines = LinesViaWord(path)
         If Not lines Is Nothing Then how = "Word"
+    ElseIf lines.Count = 0 Then
+        ' The connector can load a PDF successfully yet recover no page rows.
+        ' Word's converter is independent and sometimes still gets the text.
+        Set fallback = LinesViaWord(path)
+        If Not fallback Is Nothing Then
+            If fallback.Count > 0 Then
+                Set lines = fallback
+                how = "Word"
+            End If
+        End If
     Else
         how = "Excel's PDF reader"
     End If
+    If Len(how) = 0 And Not lines Is Nothing Then how = "Excel's PDF reader"
     modUtil.FastMode False
     Set ExtractLines = lines
 End Function
@@ -176,10 +200,12 @@ Private Function LinesViaPowerQuery(ByVal path As String) As Collection
     Dim values As Variant
     Dim out As Collection
     Dim i As Long
+    Dim oldAlerts As Boolean
 
     On Error GoTo Fail
     Set host = ThisWorkbook
     Set previous = ActiveSheet
+    oldAlerts = Application.DisplayAlerts
     DropQuery
     host.Queries.Add PQ_QUERY_NAME, PdfQueryFormula(path)
 
@@ -215,7 +241,7 @@ Cleanup:
     If Not scratch Is Nothing Then
         Application.DisplayAlerts = False
         scratch.Delete
-        Application.DisplayAlerts = True
+        Application.DisplayAlerts = oldAlerts
     End If
     DropQuery
     If Not previous Is Nothing Then previous.Activate

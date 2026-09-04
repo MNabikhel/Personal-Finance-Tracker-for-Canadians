@@ -258,6 +258,47 @@ class SkippedRowTests(unittest.TestCase):
                 self.assertEqual(kept, len(EXPECTED[name]),
                                  "the transactions still all arrive")
 
+class NoHeaderFormatTests(unittest.TestCase):
+    """Recurring exports can be identified by their account even without headers."""
+
+    CASES = [
+        ("TD (no header)",
+         "03/11/2026,LOBLAWS,48.14,,1000.00", "-48.14", "LOBLAWS"),
+        ("CIBC (no header)",
+         "2026-03-11,LOBLAWS,48.14,,CARD", "-48.14", "LOBLAWS"),
+        ("Simplii (no header)",
+         "2026-03-11,PAYROLL,,2483.18", "2483.18", "PAYROLL"),
+        ("Scotiabank (no header)",
+         "03/11/2026,-48.14,LOBLAWS,TORONTO", "-48.14", "LOBLAWS TORONTO"),
+    ]
+
+    def test_each_no_header_layout_parses_when_selected_from_the_account(self):
+        lines = [
+            "Sub Run()",
+            "    Dim profile As clsProfile",
+            "    Dim rows As Collection, records As Collection",
+            "    Dim readCount As Long, badCount As Long",
+            "    Dim txn As clsTxn",
+        ]
+        for profile, text, _amount, _description in self.CASES:
+            lines += [
+                f"    Set profile = ProfileNamed({vbahost.basic_string(profile)})",
+                f"    Set rows = modParse.SplitRows({vbahost.basic_string(text)}, "
+                "profile.Delimiter())",
+                "    Set records = modImport.ReadRecords(rows, profile, "
+                '"Account", "Owner", "statement.csv", readCount, badCount)',
+                "    Set txn = records.Item(1)",
+                f"    Emit {vbahost.basic_string(profile)}, Money(txn.Amount), "
+                "txn.Description, badCount",
+            ]
+        lines.append("End Sub")
+
+        got = {row[0]: row[1:] for row in _run("\n".join(lines))}
+        self.assertEqual(got, {
+            profile: [amount, description, "0"]
+            for profile, _text, amount, description in self.CASES
+        })
+
 
 class DuplicateTests(unittest.TestCase):
     """Re-downloading an overlapping statement must not double the ledger."""
@@ -433,6 +474,69 @@ End Sub
 
         got = [row[1] for row in _run("\n".join(lines))]
         self.assertEqual(got, [category for _, _, category in cases])
+
+
+class RefundTests(unittest.TestCase):
+    # A card statement's refunds come back as money in under the shop's own
+    # name; they belong in the category of the purchase they reverse.  Money in
+    # that the description rules recognise, and money in nobody recognises,
+    # must not be pulled in by that.
+    CASES = [
+        ("RETURN LOBLAWS #4861 TORONTO ON", 12.00, "Groceries"),
+        ("AMAZON.CA*2K4XY1 AMAZON.CA ON", 23.45, "Miscellaneous"),
+        ("LOBLAWS #4861 TORONTO ON", -99.09, "Groceries"),
+        ("PAYROLL DEPOSIT NORTHWIND", 2483.18, "Employment Income"),
+        ("TRANSFER FROM SAVINGS 1234", 200.0, "Internal Transfer"),
+        ("E-TRANSFER RECEIVED FROM JANE", 60.0, "Interac e-Transfer Received"),
+        ("XYZZY UNKNOWN MERCHANT", 19.99, None),
+    ]
+
+    def test_a_refund_follows_the_purchase_into_its_category(self):
+        lines = ["Sub Run()", "    Dim rules As Collection", "    Dim rule As clsRule",
+                 "    Set rules = modRules.ByPriority(SheetRules())"]
+        for index, (description, amount, _) in enumerate(self.CASES, start=1):
+            literal = vbahost.basic_string(description)
+            lines += [
+                f"    Set rule = modRules.RuleFor(rules, "
+                f"modRules.CleanMerchant({literal}), {literal}, \"Card\", {amount})",
+                "    If rule Is Nothing Then",
+                f"        Emit {index}, \"(none)\"",
+                "    Else",
+                f"        Emit {index}, rule.Category",
+                "    End If",
+            ]
+        lines.append("End Sub")
+
+        got = [row[1] for row in _run("\n".join(lines))]
+        want = [category or "(none)" for _, _, category in self.CASES]
+        self.assertEqual(
+            [(case[0], expected, actual)
+             for case, expected, actual in zip(self.CASES, want, got)
+             if expected != actual],
+            [])
+
+    def test_only_merchant_rules_that_expect_money_out_count_as_purchases(self):
+        body = '''
+Sub Run()
+    Dim rule As clsRule
+    Set rule = New clsRule
+    rule.LookIn = "Merchant": rule.Flow = "Money out"
+    Emit "merchant out", Flag(rule.IsMerchantPaymentRule())
+    rule.Flow = "Any"
+    Emit "merchant any", Flag(rule.IsMerchantPaymentRule())
+    rule.Flow = "Money in"
+    Emit "merchant in", Flag(rule.IsMerchantPaymentRule())
+    rule.LookIn = "Description": rule.Flow = "Money out"
+    Emit "description out", Flag(rule.IsMerchantPaymentRule())
+    rule.LookIn = "Any"
+    Emit "any out", Flag(rule.IsMerchantPaymentRule())
+    rule.LookIn = ""
+    Emit "blank out", Flag(rule.IsMerchantPaymentRule())
+End Sub
+'''
+        self.assertEqual(dict(_run(body)), {
+            "merchant out": "yes", "merchant any": "no", "merchant in": "no",
+            "description out": "no", "any out": "no", "blank out": "no"})
 
 
 if __name__ == "__main__":

@@ -28,8 +28,12 @@ DOCUMENT = "document"
 WORKBOOK_VB_BASE = "0{00020819-0000-0000-C000-000000000046}"
 WORKSHEET_VB_BASE = "0{00020820-0000-0000-C000-000000000046}"
 
-# The reference set Excel creates for a new workbook project.  Office resolves
-# these by CLSID, so the embedded paths are only a hint.
+# The references Excel stores for a new workbook project - and only these.
+# The VBA runtime and the Excel object library are host references that the
+# project gets implicitly; a project that also lists them explicitly is not
+# what Excel writes, and Excel treats a second copy of a library it already
+# supplies as a name conflict.  Office resolves the two below by CLSID, so the
+# embedded paths are only a hint.
 DEFAULT_REFERENCES: List[Tuple[str, str]] = [
     (
         "stdole",
@@ -43,20 +47,6 @@ DEFAULT_REFERENCES: List[Tuple[str, str]] = [
         "Microsoft Office 16.0 Object Library",
     ),
 ]
-
-VBA_REFERENCE = (
-    "VBA",
-    "*\\G{000204EF-0000-0000-C000-000000000046}#4.2#9#"
-    "C:\\Program Files\\Common Files\\Microsoft Shared\\VBA\\VBA7.1\\VBE7.DLL#"
-    "Visual Basic For Applications",
-)
-
-EXCEL_REFERENCE = (
-    "Excel",
-    "*\\G{00020813-0000-0000-C000-000000000046}#1.9#0#"
-    "C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE#"
-    "Microsoft Excel 16.0 Object Library",
-)
 
 
 class OvbaError(Exception):
@@ -321,7 +311,9 @@ def build_dir(project: Project) -> bytes:
         out += _record(0x0031, struct.pack("<I", 0))  # source starts at byte 0
         out += _record(0x001E, struct.pack("<I", 0))
         out += _record(0x002C, struct.pack("<H", 0xFFFF))
-        out += _record(0x0022 if module.is_document else 0x0021, b"")
+        # MODULETYPE: 0x0021 is a procedural module; 0x0022 is any module
+        # with a class behind it - document, class or designer (2.3.4.2.3.2.8).
+        out += _record(0x0021 if module.kind == STANDARD else 0x0022, b"")
         out += _record(0x002B, b"")  # MODULE terminator: Id plus reserved u32
 
     out += _record(0x0010, b"")  # dir terminator: Id plus reserved u32
@@ -405,7 +397,7 @@ def module_header(name: str, kind: str = STANDARD, vb_base: str = "") -> str:
             "Attribute VB_Creatable = False",
             "Attribute VB_PredeclaredId = True",
             "Attribute VB_Exposed = True",
-            "Attribute VB_TemplateDerived = True",
+            "Attribute VB_TemplateDerived = False",
             "Attribute VB_Customizable = True",
         ]
     else:

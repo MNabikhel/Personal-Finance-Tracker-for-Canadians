@@ -50,7 +50,7 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = True
-Attribute VB_TemplateDerived = True
+Attribute VB_TemplateDerived = False
 Attribute VB_Customizable = True
 Option Explicit
 
@@ -88,8 +88,7 @@ def build(sheet_code_names: Iterable[str],
     project = ovba.Project(
         name=PROJECT_NAME,
         project_id=PROJECT_ID,
-        references=[ovba.VBA_REFERENCE, ovba.EXCEL_REFERENCE]
-        + ovba.DEFAULT_REFERENCES,
+        references=list(ovba.DEFAULT_REFERENCES),
         description="Personal finance tracker for Canadian households.",
     )
 

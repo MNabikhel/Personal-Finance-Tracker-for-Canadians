@@ -107,6 +107,10 @@ End Function
 Public Function NzNum(ByVal value As Variant, Optional ByVal fallback As Double = 0) As Double
     If IsError(value) Then
         NzNum = fallback
+    ElseIf VarType(value) = vbDate Then
+        ' A date-formatted cell reads back as a Date, and IsNumeric says False
+        ' to those; the day serial is the number wanted.
+        NzNum = CDbl(value)
     ElseIf IsNumeric(value) Then
         NzNum = CDbl(value)
     Else
@@ -232,7 +236,11 @@ Public Sub FastMode(ByVal switchOn As Boolean)
         End If
         mFastDepth = mFastDepth + 1
     Else
-        If mFastDepth > 0 Then mFastDepth = mFastDepth - 1
+        ' A failure can happen before its caller reached FastMode True.
+        ' Restoring an uninitialised mCalcMode (zero) then raises a second
+        ' Excel error and hides the useful first one.
+        If mFastDepth = 0 Then Exit Sub
+        mFastDepth = mFastDepth - 1
         If mFastDepth = 0 Then
             Application.Calculation = mCalcMode
             Application.EnableEvents = True
@@ -253,9 +261,18 @@ Public Sub Status(ByVal message As String)
 End Sub
 
 Public Sub ReportError(ByVal source As String)
-    FastMode False
+    Dim number As Long
+    Dim description As String
+    number = Err.Number
+    description = Err.Description
+    ' An inner macro can fail while two or more callers have FastMode open.
+    ' Restore the application completely; their later FastMode False calls
+    ' are safe no-ops.
+    Do While mFastDepth > 0
+        FastMode False
+    Loop
     MsgBox "Something went wrong in " & source & "." & vbCrLf & vbCrLf & _
-           Err.Description & " (error " & Err.Number & ")", _
+           description & " (error " & number & ")", _
            vbExclamation, APP_NAME
 End Sub
 

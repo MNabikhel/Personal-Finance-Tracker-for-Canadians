@@ -315,9 +315,16 @@ Private Function ParseLine(ByVal line As String, ByVal kind As String, _
         End If
     Else
         ' On a card statement a plain figure is a charge and a credit is
-        ' marked, with a minus sign or a CR after it.
-        amount = amounts(moneyCount)
-        If creditMark Or amount < 0 Then
+        ' marked, with a minus sign or a CR after it. If an account-shaped line
+        ' is being tried as a card, the earlier figure is the transaction and
+        ' the final one is its running balance. A foreign card line is the
+        ' opposite: original currency first, posted CAD amount last.
+        If moneyCount >= 2 And HasForeignCurrency(description) Then
+            amount = amounts(1)
+        Else
+            amount = amounts(moneyCount)
+        End If
+        If creditMark Or amount < 0 Or LooksLikeCardCredit(description) Then
             amount = Abs(amount)
         Else
             amount = -Abs(amount)
@@ -332,6 +339,59 @@ Private Function ParseLine(ByVal line As String, ByVal kind As String, _
     txn.Merchant = modRules.CleanMerchant(description)
     txn.Amount = amount
     Set ParseLine = txn
+End Function
+
+' A foreign purchase commonly ends its description with an ISO currency code,
+' followed by the original amount and the posted Canadian amount.
+Private Function HasForeignCurrency(ByVal description As String) As Boolean
+    Dim upper As String
+    Dim codes As Variant
+    Dim i As Long
+    upper = " " & UCase$(description) & " "
+    codes = Array(" USD ", " US$ ", " EUR ", " GBP ", " JPY ", " CNY ", _
+                  " HKD ", " MXN ", " AUD ", " NZD ", " CHF ")
+    For i = LBound(codes) To UBound(codes)
+        If InStr(upper, codes(i)) > 0 Then
+            HasForeignCurrency = True
+            Exit Function
+        End If
+    Next i
+End Function
+
+' Some card issuers print credits as unsigned positive figures and put the
+' direction only in the description.  Keep the test narrow: generic words
+' such as "payment" in the middle of a merchant description are still charges.
+Public Function LooksLikeCardCredit(ByVal description As String) As Boolean
+    Dim lower As String
+    Dim starts As Variant
+    Dim contains As Variant
+    Dim i As Long
+
+    lower = LCase$(Trim$(description))
+    If Left$(lower, 11) = "payment fee" Or _
+       Left$(lower, 16) = "late payment fee" Or _
+       Left$(lower, 20) = "returned payment fee" Or _
+       Left$(lower, 16) = "payment reversal" Then Exit Function
+
+    starts = Array("payment ", "paiement ", "refund ", "return ", _
+                   "remboursement ", "reversal ")
+    For i = LBound(starts) To UBound(starts)
+        If Left$(lower, Len(starts(i))) = starts(i) Then
+            LooksLikeCardCredit = True
+            Exit Function
+        End If
+    Next i
+
+    contains = Array(" payment received", " payment thank you", _
+                     " payment - thank you", " credit adjustment", _
+                     " purchase return")
+    lower = " " & lower
+    For i = LBound(contains) To UBound(contains)
+        If InStr(lower, contains(i)) > 0 Then
+            LooksLikeCardCredit = True
+            Exit Function
+        End If
+    Next i
 End Function
 
 '--- Dates on transaction lines ---------------------------------------------
@@ -588,10 +648,20 @@ End Function
 ' and the ledger's editable Amount are for.
 Public Function LooksLikeMoneyIn(ByVal description As String) As Boolean
     Dim lower As String
+    Dim moneyOut As Variant
     Dim words As Variant
     Dim i As Long
     lower = " " & LCase$(description) & " "
-    words = Array(" deposit", " payroll", " pay ", " refund", " credit memo", _
+
+    ' These contain words that otherwise look credit-like.  Apple Pay is a
+    ' purchase, and overdraft/debit interest is a charge.
+    moneyOut = Array(" apple pay", " google pay", " interest charge", _
+                     " overdraft interest", " debit interest", " interest debit")
+    For i = LBound(moneyOut) To UBound(moneyOut)
+        If InStr(lower, moneyOut(i)) > 0 Then Exit Function
+    Next i
+
+    words = Array(" deposit", " payroll", " refund", " credit memo", _
                   " interest", " rebate", " transfer from", " received", " reversal", _
                   " cashback", " cash back", " canada fed", " canada pro", _
                   " canada rit", " canada child", " cra ", " gst", " hst", _

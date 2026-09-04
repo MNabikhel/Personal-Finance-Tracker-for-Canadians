@@ -277,6 +277,33 @@ class TextTests(unittest.TestCase):
         got = [row[1] for row in vbahost.rows(vbahost.run(body))]
         self.assertEqual(got, ["rbc.csv"] * 3)
 
+    def test_dates_convert_to_their_day_number(self):
+        # Excel returns a Date-typed Variant for a date-formatted Range.Value;
+        # VBA's IsNumeric(Date) is False, but transfer matching needs the serial.
+        body = '''
+Sub Run()
+    Dim when As Date
+    when = DateSerial(2026, 9, 4)
+    Emit "date", modUtil.NzNum(when, -1), VarType(when), Flag(IsNumeric(when))
+    Emit "number", modUtil.NzNum(12.5, -1)
+End Sub
+'''
+        rows = vbahost.rows(vbahost.run(body))
+        self.assertEqual(rows[0], ["date", "46269", "7", "no"])
+        self.assertEqual(rows[1], ["number", "12.5"])
+
+    def test_ending_fast_mode_when_it_never_started_is_a_no_op(self):
+        # Error handlers call FastMode False even if they failed before the
+        # matching True. It must not restore calculation mode from an
+        # uninitialised enum and replace the useful original error.
+        body = '''
+Sub Run()
+    modUtil.FastMode False
+    Emit "returned"
+End Sub
+'''
+        self.assertEqual(vbahost.rows(vbahost.run(body)), [["returned"]])
+
 
 class HashTests(unittest.TestCase):
     """The duplicate key has to agree with the one the builder wrote."""
