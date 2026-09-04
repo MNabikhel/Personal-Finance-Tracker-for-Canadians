@@ -265,7 +265,12 @@ Public Sub ReportError(ByVal source As String)
     Dim description As String
     number = Err.Number
     description = Err.Description
-    FastMode False
+    ' An inner macro can fail while two or more callers have FastMode open.
+    ' Restore the application completely; their later FastMode False calls
+    ' are safe no-ops.
+    Do While mFastDepth > 0
+        FastMode False
+    Loop
     MsgBox "Something went wrong in " & source & "." & vbCrLf & vbCrLf & _
            description & " (error " & number & ")", _
            vbExclamation, APP_NAME

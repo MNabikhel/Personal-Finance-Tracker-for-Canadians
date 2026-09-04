@@ -283,6 +283,12 @@ class BuilderAgreementTests(unittest.TestCase):
         self.assertLessEqual(set(self._constants("COL_").values()),
                              set(workbook.TXN_HEADERS))
 
+    def test_the_import_log_columns_are_all_addressed_by_header(self):
+        built = workbook.build(workbook.date(2026, 9, 1))
+        table = built[workbook.SH_LOG].tables["tblLog"]
+        headers = {column.name for column in table.tableColumns}
+        self.assertEqual(set(self._constants("LG_").values()), headers)
+
     def test_the_importer_fills_every_column_the_user_does_not(self):
         # A ledger column that is neither calculated, nor filled by the import,
         # nor left for the user on purpose would simply come out blank.
@@ -338,6 +344,7 @@ class WorkflowInvariantTests(unittest.TestCase):
     def test_fast_mode_off_is_safe_before_fast_mode_was_started(self):
         body = MODULES["modUtil"].code
         self.assertIn("If mFastDepth = 0 Then Exit Sub", body)
+        self.assertIn("Do While mFastDepth > 0", body)
 
     def test_each_import_gets_a_collision_checked_batch_id(self):
         body = MODULES["modImport"].code
@@ -368,6 +375,18 @@ class WorkflowInvariantTests(unittest.TestCase):
         self.assertIn("Case SH_DASHBOARD", source)
         self.assertIn("DashboardChanged Target", source)
         self.assertGreaterEqual(source.count("modReport.RefreshTopMerchants"), 3)
+
+    def test_no_header_exports_reuse_the_account_saved_format(self):
+        source = MODULES["modImport"].code
+        detected = source.index("Set profile = modProfiles.DetectProfile(rows)")
+        saved = source.index("modProfiles.FindProfileByName", detected)
+        asked = source.index("modProfiles.AskForProfile(fileName)", saved)
+        self.assertLess(detected, saved)
+        self.assertLess(saved, asked)
+
+    def test_large_manual_category_pastes_are_not_silently_left_retaggable(self):
+        source = MODULES["ThisWorkbook"].code
+        self.assertNotIn("touched.Cells.Count >", source)
 
 
 if __name__ == "__main__":

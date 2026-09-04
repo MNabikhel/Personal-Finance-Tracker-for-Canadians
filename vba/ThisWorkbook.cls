@@ -63,7 +63,6 @@ Private Sub LedgerChanged(ByVal Target As Range)
 
     Set touched = Application.Intersect(Target, lo.ListColumns(COL_CATEGORY).DataBodyRange)
     If touched Is Nothing Then Exit Sub
-    If touched.Cells.Count > 500 Then Exit Sub
 
     taggedColumn = modUtil.ColumnIndex(lo, COL_TAGGEDBY) - _
                    modUtil.ColumnIndex(lo, COL_CATEGORY)

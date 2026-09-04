@@ -319,7 +319,7 @@ Private Function ParseLine(ByVal line As String, ByVal kind As String, _
         ' is being tried as a card, the earlier figure is the transaction and
         ' the final one is its running balance.
         amount = amounts(moneyCount)
-        If creditMark Or amount < 0 Then
+        If creditMark Or amount < 0 Or LooksLikeCardCredit(description) Then
             amount = Abs(amount)
         Else
             amount = -Abs(amount)
@@ -334,6 +334,42 @@ Private Function ParseLine(ByVal line As String, ByVal kind As String, _
     txn.Merchant = modRules.CleanMerchant(description)
     txn.Amount = amount
     Set ParseLine = txn
+End Function
+
+' Some card issuers print credits as unsigned positive figures and put the
+' direction only in the description.  Keep the test narrow: generic words
+' such as "payment" in the middle of a merchant description are still charges.
+Public Function LooksLikeCardCredit(ByVal description As String) As Boolean
+    Dim lower As String
+    Dim starts As Variant
+    Dim contains As Variant
+    Dim i As Long
+
+    lower = LCase$(Trim$(description))
+    If Left$(lower, 11) = "payment fee" Or _
+       Left$(lower, 16) = "late payment fee" Or _
+       Left$(lower, 20) = "returned payment fee" Or _
+       Left$(lower, 16) = "payment reversal" Then Exit Function
+
+    starts = Array("payment ", "paiement ", "refund ", "return ", _
+                   "remboursement ", "reversal ")
+    For i = LBound(starts) To UBound(starts)
+        If Left$(lower, Len(starts(i))) = starts(i) Then
+            LooksLikeCardCredit = True
+            Exit Function
+        End If
+    Next i
+
+    contains = Array(" payment received", " payment thank you", _
+                     " payment - thank you", " credit adjustment", _
+                     " purchase return")
+    lower = " " & lower
+    For i = LBound(contains) To UBound(contains)
+        If InStr(lower, contains(i)) > 0 Then
+            LooksLikeCardCredit = True
+            Exit Function
+        End If
+    Next i
 End Function
 
 '--- Dates on transaction lines ---------------------------------------------

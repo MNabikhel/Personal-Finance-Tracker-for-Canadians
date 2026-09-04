@@ -258,6 +258,47 @@ class SkippedRowTests(unittest.TestCase):
                 self.assertEqual(kept, len(EXPECTED[name]),
                                  "the transactions still all arrive")
 
+class NoHeaderFormatTests(unittest.TestCase):
+    """Recurring exports can be identified by their account even without headers."""
+
+    CASES = [
+        ("TD (no header)",
+         "03/11/2026,LOBLAWS,48.14,,1000.00", "-48.14", "LOBLAWS"),
+        ("CIBC (no header)",
+         "2026-03-11,LOBLAWS,48.14,,CARD", "-48.14", "LOBLAWS"),
+        ("Simplii (no header)",
+         "2026-03-11,PAYROLL,,2483.18", "2483.18", "PAYROLL"),
+        ("Scotiabank (no header)",
+         "03/11/2026,-48.14,LOBLAWS,TORONTO", "-48.14", "LOBLAWS TORONTO"),
+    ]
+
+    def test_each_no_header_layout_parses_when_selected_from_the_account(self):
+        lines = [
+            "Sub Run()",
+            "    Dim profile As clsProfile",
+            "    Dim rows As Collection, records As Collection",
+            "    Dim readCount As Long, badCount As Long",
+            "    Dim txn As clsTxn",
+        ]
+        for profile, text, _amount, _description in self.CASES:
+            lines += [
+                f"    Set profile = ProfileNamed({vbahost.basic_string(profile)})",
+                f"    Set rows = modParse.SplitRows({vbahost.basic_string(text)}, "
+                "profile.Delimiter())",
+                "    Set records = modImport.ReadRecords(rows, profile, "
+                '"Account", "Owner", "statement.csv", readCount, badCount)',
+                "    Set txn = records.Item(1)",
+                f"    Emit {vbahost.basic_string(profile)}, Money(txn.Amount), "
+                "txn.Description, badCount",
+            ]
+        lines.append("End Sub")
+
+        got = {row[0]: row[1:] for row in _run("\n".join(lines))}
+        self.assertEqual(got, {
+            profile: [amount, description, "0"]
+            for profile, _text, amount, description in self.CASES
+        })
+
 
 class DuplicateTests(unittest.TestCase):
     """Re-downloading an overlapping statement must not double the ledger."""

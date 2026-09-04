@@ -213,6 +213,28 @@ End Sub
 '''
         self.assertEqual(_run(body)[0], ["Credit card"])
 
+    def test_unsigned_card_credits_use_their_description_for_direction(self):
+        rows = _read(
+            "Statement date: September 19, 2026\n"
+            "Minimum payment: $10.00\n"
+            "SEP 03 SEP 04 PAYMENT THANK YOU 1,203.45\n"
+            "SEP 05 SEP 06 RETURN LOBLAWS #4861 12.00\n"
+            "SEP 07 SEP 08 PAYMENT FEE 4.00\n"
+            "SEP 09 SEP 10 NETFLIX MISC PAYMENT 22.99\n"
+            "SEP 11 SEP 12 PAYMENT REVERSAL 100.00",
+            "Credit card",
+        )[1:]
+        self.assertEqual(
+            [(row[2], row[1]) for row in rows],
+            [
+                ("PAYMENT THANK YOU", "1203.45"),
+                ("RETURN LOBLAWS #4861", "12.00"),
+                ("PAYMENT FEE", "-4.00"),
+                ("NETFLIX MISC PAYMENT", "-22.99"),
+                ("PAYMENT REVERSAL", "-100.00"),
+            ],
+        )
+
 
 class YearEndTests(unittest.TestCase):
     def test_december_lines_on_a_january_statement_are_last_year(self):

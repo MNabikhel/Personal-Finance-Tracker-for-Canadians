@@ -179,6 +179,11 @@ columns, and a fragment of the header line to recognise the file by. If your
 bank changes its export or is not listed, fix the column numbers on that sheet
 and import again. No code changes, no rebuild.
 
+Exports from TD, CIBC, Simplii and Scotiabank do not carry a header that names
+their format. For those, the importer reuses the **Bank Format** from the
+account whose **File Name Contains** hint matches the download; if no account
+hint identifies it, it asks you to choose the format.
+
 Three things worth knowing:
 
 - **Sign convention.** Money leaving an account is stored as a negative number
@@ -384,7 +389,7 @@ pip install -r requirements-dev.txt
 python3 -m unittest discover -s tests -t .
 ```
 
-155 tests, about 30 seconds. They fall into six groups:
+160 tests, about 30 seconds. They fall into six groups:
 
 - **Format conformance** (`test_ovba.py`) — the compression and encryption
   vectors from [MS-OVBA] §3.2 and §2.3.1.15–17, so the writer is checked

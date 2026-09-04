@@ -18,7 +18,12 @@ Public Const AC_NOTES As String = "Notes"
 Public Const LG_WHEN As String = "When"
 Public Const LG_BATCH As String = "Batch"
 Public Const LG_FILE As String = "File"
+Public Const LG_FORMAT As String = "Format"
+Public Const LG_ACCOUNT As String = "Account"
+Public Const LG_READ As String = "Rows read"
 Public Const LG_IMPORTED As String = "Imported"
+Public Const LG_DUPLICATES As String = "Duplicates"
+Public Const LG_UNREADABLE As String = "Unreadable"
 Public Const LG_STATUS As String = "Status"
 
 Public Function AccountsTable() As ListObject
@@ -99,10 +104,7 @@ Public Function ResolveAccount(ByVal fileName As String, _
                                ByVal profile As clsProfile) As String
     Dim lo As ListObject
     Dim i As Long
-    Dim hint As String
-    Dim bestHintLength As Long
-    Dim bestHintAccount As String
-    Dim bestHintTied As Boolean
+    Dim hintRow As Long
     Dim profileName As String
     Dim candidate As String
     Dim candidateCount As Long
@@ -112,26 +114,9 @@ Public Function ResolveAccount(ByVal fileName As String, _
     Set lo = AccountsTable()
     profileName = profile.Name
 
-    For i = 1 To modUtil.BodyRows(lo)
-        hint = AccountValue(i, AC_FILEMATCH)
-        If Len(hint) > 0 And Len(AccountValue(i, AC_NAME)) > 0 Then
-            If InStr(1, fileName, hint, vbTextCompare) > 0 Then
-                If Len(hint) > bestHintLength Then
-                    bestHintLength = Len(hint)
-                    bestHintAccount = AccountValue(i, AC_NAME)
-                    bestHintTied = False
-                ElseIf Len(hint) = bestHintLength And _
-                       StrComp(bestHintAccount, AccountValue(i, AC_NAME), _
-                               vbTextCompare) <> 0 Then
-                    bestHintTied = True
-                End If
-            End If
-        End If
-    Next i
-    ' A more specific snippet ("rbc-visa") wins over a broad one ("rbc").
-    ' Equal best matches are ambiguous and fall through to the account picker.
-    If bestHintLength > 0 And Not bestHintTied Then
-        ResolveAccount = bestHintAccount
+    hintRow = BestFileHintRow(fileName)
+    If hintRow > 0 Then
+        ResolveAccount = AccountValue(hintRow, AC_NAME)
         Exit Function
     End If
 
@@ -160,6 +145,45 @@ Public Function ResolveAccount(ByVal fileName As String, _
                                "Accounts sheet to skip this question next time.)", names)
     If choice = 0 Then Exit Function
     ResolveAccount = names(choice - 1)
+End Function
+
+' Lets the importer use an account's saved format before it has parsed the
+' file.  That is how recurring no-header TD/CIBC/Scotia-style downloads avoid
+' asking for the same format every month.
+Public Function FormatForFileName(ByVal fileName As String) As String
+    Dim rowIndex As Long
+    rowIndex = BestFileHintRow(fileName)
+    If rowIndex > 0 Then FormatForFileName = AccountValue(rowIndex, AC_FORMAT)
+End Function
+
+' A more specific snippet ("rbc-visa") wins over a broad one ("rbc").
+' Equal best matches are ambiguous and deliberately fall through to a picker.
+Private Function BestFileHintRow(ByVal fileName As String) As Long
+    Dim lo As ListObject
+    Dim i As Long
+    Dim hint As String
+    Dim bestLength As Long
+    Dim bestRow As Long
+    Dim tied As Boolean
+
+    Set lo = AccountsTable()
+    For i = 1 To modUtil.BodyRows(lo)
+        hint = AccountValue(i, AC_FILEMATCH)
+        If Len(hint) > 0 And Len(AccountValue(i, AC_NAME)) > 0 Then
+            If InStr(1, fileName, hint, vbTextCompare) > 0 Then
+                If Len(hint) > bestLength Then
+                    bestLength = Len(hint)
+                    bestRow = i
+                    tied = False
+                ElseIf Len(hint) = bestLength And _
+                       StrComp(AccountValue(bestRow, AC_NAME), _
+                               AccountValue(i, AC_NAME), vbTextCompare) <> 0 Then
+                    tied = True
+                End If
+            End If
+        End If
+    Next i
+    If bestLength > 0 And Not tied Then BestFileHintRow = bestRow
 End Function
 
 Public Function CreateAccountInteractively(ByVal profile As clsProfile) As String
@@ -270,15 +294,16 @@ Public Sub LogBatch(ByVal batchId As String, ByVal fileName As String, _
     End If
 
     With lo.DataBodyRange
-        .Cells(rowIndex, 1).Value = Now
-        .Cells(rowIndex, 1).NumberFormat = "yyyy-mm-dd hh:mm"
-        .Cells(rowIndex, 2).Value = batchId
-        .Cells(rowIndex, 3).Value = fileName
-        .Cells(rowIndex, 4).Value = profileName
-        .Cells(rowIndex, 5).Value = accountName
-        .Cells(rowIndex, 6).Value = rowsRead
-        .Cells(rowIndex, 7).Value = imported
-        .Cells(rowIndex, 8).Value = duplicates
-        .Cells(rowIndex, 9).Value = unreadable
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_WHEN)).Value = Now
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_WHEN)).NumberFormat = _
+            "yyyy-mm-dd hh:mm"
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_BATCH)).Value = batchId
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_FILE)).Value = fileName
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_FORMAT)).Value = profileName
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_ACCOUNT)).Value = accountName
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_READ)).Value = rowsRead
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_IMPORTED)).Value = imported
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_DUPLICATES)).Value = duplicates
+        .Cells(rowIndex, modUtil.ColumnIndex(lo, LG_UNREADABLE)).Value = unreadable
     End With
 End Sub

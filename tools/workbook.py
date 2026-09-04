@@ -1433,6 +1433,8 @@ HELP_SECTIONS = [
         "year comes from the statement date on the page.",
         "Either way you are shown the first rows it read and asked to confirm before "
         "anything is written.",
+        "A CSV with no identifying header reuses the Bank Format from the account "
+        "whose File Name Contains hint matches it; otherwise you pick the format.",
         "Money leaving an account is stored as a negative number and money arriving "
         "as a positive one, whichever way your bank writes it.",
         "Re-importing a statement that overlaps one you already loaded adds only the "
