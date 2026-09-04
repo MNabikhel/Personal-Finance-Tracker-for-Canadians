@@ -1,0 +1,9 @@
+{
+  "name": "Canadian Finance Tracker",
+  "user": "ubuntu",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+  "install": "pip install --break-system-packages -r requirements-dev.txt"
+}
