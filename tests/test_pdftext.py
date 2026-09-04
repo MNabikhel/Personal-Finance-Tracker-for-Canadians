@@ -235,6 +235,18 @@ End Sub
             ],
         )
 
+    def test_a_foreign_purchase_uses_the_final_posted_cad_amount(self):
+        rows = _read(
+            "Statement date: September 19, 2026\n"
+            "Minimum payment: $10.00\n"
+            "SEP 03 SEP 04 FOREIGN MERCHANT USD 10.00 13.82",
+            "Credit card",
+        )[1:]
+        self.assertEqual(
+            [tuple(row[:3]) for row in rows],
+            [("2026-09-03", "-13.82", "FOREIGN MERCHANT USD")],
+        )
+
 
 class YearEndTests(unittest.TestCase):
     def test_december_lines_on_a_january_statement_are_last_year(self):

@@ -317,8 +317,13 @@ Private Function ParseLine(ByVal line As String, ByVal kind As String, _
         ' On a card statement a plain figure is a charge and a credit is
         ' marked, with a minus sign or a CR after it. If an account-shaped line
         ' is being tried as a card, the earlier figure is the transaction and
-        ' the final one is its running balance.
-        amount = amounts(moneyCount)
+        ' the final one is its running balance. A foreign card line is the
+        ' opposite: original currency first, posted CAD amount last.
+        If moneyCount >= 2 And HasForeignCurrency(description) Then
+            amount = amounts(1)
+        Else
+            amount = amounts(moneyCount)
+        End If
         If creditMark Or amount < 0 Or LooksLikeCardCredit(description) Then
             amount = Abs(amount)
         Else
@@ -334,6 +339,23 @@ Private Function ParseLine(ByVal line As String, ByVal kind As String, _
     txn.Merchant = modRules.CleanMerchant(description)
     txn.Amount = amount
     Set ParseLine = txn
+End Function
+
+' A foreign purchase commonly ends its description with an ISO currency code,
+' followed by the original amount and the posted Canadian amount.
+Private Function HasForeignCurrency(ByVal description As String) As Boolean
+    Dim upper As String
+    Dim codes As Variant
+    Dim i As Long
+    upper = " " & UCase$(description) & " "
+    codes = Array(" USD ", " US$ ", " EUR ", " GBP ", " JPY ", " CNY ", _
+                  " HKD ", " MXN ", " AUD ", " NZD ", " CHF ")
+    For i = LBound(codes) To UBound(codes)
+        If InStr(upper, codes(i)) > 0 Then
+            HasForeignCurrency = True
+            Exit Function
+        End If
+    Next i
 End Function
 
 ' Some card issuers print credits as unsigned positive figures and put the
