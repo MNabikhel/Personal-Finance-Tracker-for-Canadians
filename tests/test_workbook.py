@@ -150,6 +150,10 @@ class Recalculated:
         self.cell(sheet, ref).setString(value)
         self.recalculate()
 
+    def set_number(self, sheet: str, ref: str, value: float) -> None:
+        self.cell(sheet, ref).setValue(value)
+        self.recalculate()
+
 
 class PackageTests(unittest.TestCase):
     """The parts of the package that make it a macro-enabled workbook."""
@@ -234,6 +238,28 @@ class ShapeTests(unittest.TestCase):
         table = self.wb[workbook.SH_TXN].tables["tblTxn"]
         self.assertEqual([column.name for column in table.tableColumns],
                          workbook.TXN_HEADERS)
+
+    def test_every_account_column_has_a_working_purpose(self):
+        table = self.wb[workbook.SH_ACCOUNTS].tables["tblAccounts"]
+        self.assertEqual(
+            [column.name for column in table.tableColumns],
+            ["Account", "Institution", "Type", "Owner", "Bank Format",
+             "File Name Contains", "Notes"],
+        )
+
+    def test_the_setup_wizard_can_identify_only_the_sample_accounts(self):
+        ws = self.wb[workbook.SH_ACCOUNTS]
+        table = ws.tables["tblAccounts"]
+        from openpyxl.utils import range_boundaries
+        min_col, min_row, max_col, max_row = range_boundaries(table.ref)
+        headers = [ws.cell(min_row, col).value for col in range(min_col, max_col + 1)]
+        notes = headers.index("Notes") + min_col
+        marked = [
+            ws.cell(row, notes).value
+            for row in range(min_row + 1, max_row + 1)
+            if ws.cell(row, notes).value
+        ]
+        self.assertEqual(marked, ["Sample account"] * 4)
 
     def test_the_defined_names_the_macros_read_are_all_there(self):
         for key in ("ReportMonth", "ReportView", "PersonA", "PersonB",
@@ -448,6 +474,63 @@ class ReportsTests(unittest.TestCase):
                              for i in range(workbook.REPORT_MONTHS))
                 self.assertEqual(self.book.number(self.sheet, f"{total}{row}"),
                                  round(months, CENTS))
+
+class BudgetTests(unittest.TestCase):
+    """Budget comparisons stay internally consistent with month and View."""
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            libreoffice.context()
+        except libreoffice.Unavailable as exc:  # pragma: no cover - environment
+            raise unittest.SkipTest(str(exc))
+        cls.book = Recalculated(_path)
+
+        cls.grocery_index = next(
+            index for index, row in enumerate(data.CATEGORIES)
+            if row[0] == "Groceries")
+        cls.income_index = next(
+            index for index, row in enumerate(data.CATEGORIES)
+            if row[0] == "Employment Income")
+        cls.grocery_budget_row = 6 + cls.grocery_index
+        cls.book.set_number(workbook.SH_CATEGORIES,
+                            f"G{5 + cls.grocery_index}", 500)
+        # An income target must not be counted as money left in an expense
+        # budget on the Dashboard.
+        cls.book.set_number(workbook.SH_CATEGORIES,
+                            f"G{5 + cls.income_index}", 10000)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.book.close()
+
+    def test_household_budget_uses_only_budgeted_expense_categories(self):
+        groceries = [txn for txn in _month(_records)
+                     if txn.category == "Groceries"]
+        actual = -_total(groceries)
+        row = self.grocery_budget_row
+        self.assertEqual(self.book.number(workbook.SH_BUDGET, f"E{row}"), 500)
+        self.assertEqual(self.book.number(workbook.SH_BUDGET, f"F{row}"), actual)
+        self.assertEqual(self.book.number(workbook.SH_BUDGET, f"G{row}"),
+                         round(500 - actual, CENTS))
+        self.assertEqual(self.book.number(workbook.SH_DASHBOARD, "F13"),
+                         round(500 - actual, CENTS))
+
+    def test_a_personal_view_does_not_compare_one_share_to_household_budgets(self):
+        try:
+            self.book.set(workbook.SH_DASHBOARD, "F6", sample.PERSON_A)
+            row = self.grocery_budget_row
+            groceries = [txn for txn in _month(_records)
+                         if txn.category == "Groceries"]
+            self.assertEqual(
+                self.book.number(workbook.SH_BUDGET, f"F{row}"),
+                -_sum(_share_a(txn) for txn in groceries),
+            )
+            self.assertEqual(self.book.text(workbook.SH_BUDGET, f"E{row}"), "")
+            self.assertEqual(self.book.text(workbook.SH_BUDGET, f"G{row}"), "")
+            self.assertEqual(self.book.text(workbook.SH_DASHBOARD, "F13"), "")
+        finally:
+            self.book.set(workbook.SH_DASHBOARD, "F6", "Household")
 
 
 class CoupleModeTests(unittest.TestCase):

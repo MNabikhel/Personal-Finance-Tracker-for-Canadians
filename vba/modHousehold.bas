@@ -8,14 +8,17 @@ Option Explicit
 
 Public Sub ToggleHouseholdMode()
     Dim wantCouple As Boolean
+    Dim secondName As String
     On Error GoTo Fail
 
     wantCouple = Not modUtil.IsCoupleMode()
 
     If wantCouple Then
         If Len(modUtil.NzStr(modUtil.Setting(NR_PERSON_B))) = 0 Then
-            modUtil.SetSetting NR_PERSON_B, Trim$(InputBox( _
+            secondName = Trim$(InputBox( _
                 "Name of the second person:", APP_NAME, "Person B"))
+            If Len(secondName) = 0 Then Exit Sub
+            modUtil.SetSetting NR_PERSON_B, secondName
         End If
         modUtil.SetSetting NR_MODE, MODE_COUPLE
     Else

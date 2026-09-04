@@ -236,7 +236,11 @@ Public Sub FastMode(ByVal switchOn As Boolean)
         End If
         mFastDepth = mFastDepth + 1
     Else
-        If mFastDepth > 0 Then mFastDepth = mFastDepth - 1
+        ' A failure can happen before its caller reached FastMode True.
+        ' Restoring an uninitialised mCalcMode (zero) then raises a second
+        ' Excel error and hides the useful first one.
+        If mFastDepth = 0 Then Exit Sub
+        mFastDepth = mFastDepth - 1
         If mFastDepth = 0 Then
             Application.Calculation = mCalcMode
             Application.EnableEvents = True
@@ -257,9 +261,13 @@ Public Sub Status(ByVal message As String)
 End Sub
 
 Public Sub ReportError(ByVal source As String)
+    Dim number As Long
+    Dim description As String
+    number = Err.Number
+    description = Err.Description
     FastMode False
     MsgBox "Something went wrong in " & source & "." & vbCrLf & vbCrLf & _
-           Err.Description & " (error " & Err.Number & ")", _
+           description & " (error " & number & ")", _
            vbExclamation, APP_NAME
 End Sub
 

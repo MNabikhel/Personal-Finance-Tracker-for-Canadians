@@ -292,6 +292,47 @@ class BuilderAgreementTests(unittest.TestCase):
             with self.subTest(key):
                 self.assertIn(value, categories)
 
+class WorkflowInvariantTests(unittest.TestCase):
+    """Cross-module ordering that can silently change financial results."""
+
+    def test_undo_rechecks_transfer_pairs_after_deleting_the_batch(self):
+        body = MODULES["modImport"].code
+        deleted = body.index("modLedger.DeleteRowsWhere")
+        rechecked = body.index("modTransfers.DetectTransfers False", deleted)
+        self.assertLess(deleted, rechecked)
+
+    def test_reapplying_all_rules_restores_transfer_detection(self):
+        body = MODULES["modRules"].code
+        self.assertIn("If includeTagged Then modTransfers.DetectTransfers False", body)
+
+    def test_biggest_merchants_nets_refunds_instead_of_adding_them(self):
+        body = MODULES["modReport"].code
+        self.assertIn("-modUtil.NzNum(views(i, 1))", body)
+        self.assertNotIn("Abs(modUtil.NzNum(views(i, 1)))", body)
+        self.assertIn("> 0 Then", body)
+
+    def test_fast_mode_off_is_safe_before_fast_mode_was_started(self):
+        body = MODULES["modUtil"].code
+        self.assertIn("If mFastDepth = 0 Then Exit Sub", body)
+
+    def test_each_import_gets_a_collision_checked_batch_id(self):
+        body = MODULES["modImport"].code
+        allocated = body.index("batchId = NewBatchId(batchStamp, i)")
+        dispatched = min(body.index("modPdf.ImportOnePdf"),
+                         body.index("ImportOneFile(CStr(chosen(i))"))
+        self.assertLess(allocated, dispatched)
+        self.assertIn("Do While BatchIdExists(candidate)", body)
+        self.assertIn("Set lo = modUtil.TxnTable()", body)
+
+    def test_setup_removes_only_marked_sample_accounts_when_starting_fresh(self):
+        self.assertIn(
+            "modAccounts.ClearSampleAccounts",
+            MODULES["modSetup"].code,
+        )
+        accounts = MODULES["modAccounts"].code
+        self.assertIn('"Sample account", vbTextCompare', accounts)
+        self.assertIn("lo.DataBodyRange.Rows(i).ClearContents", accounts)
+
 
 if __name__ == "__main__":
     unittest.main()

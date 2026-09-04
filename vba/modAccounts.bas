@@ -12,7 +12,6 @@ Public Const AC_TYPE As String = "Type"
 Public Const AC_OWNER As String = "Owner"
 Public Const AC_FORMAT As String = "Bank Format"
 Public Const AC_FILEMATCH As String = "File Name Contains"
-Public Const AC_INCLUDE As String = "Include in Household"
 Public Const AC_NOTES As String = "Notes"
 
 ' Import Log column headers
@@ -101,6 +100,9 @@ Public Function ResolveAccount(ByVal fileName As String, _
     Dim lo As ListObject
     Dim i As Long
     Dim hint As String
+    Dim bestHintLength As Long
+    Dim bestHintAccount As String
+    Dim bestHintTied As Boolean
     Dim profileName As String
     Dim candidate As String
     Dim candidateCount As Long
@@ -114,11 +116,24 @@ Public Function ResolveAccount(ByVal fileName As String, _
         hint = AccountValue(i, AC_FILEMATCH)
         If Len(hint) > 0 And Len(AccountValue(i, AC_NAME)) > 0 Then
             If InStr(1, fileName, hint, vbTextCompare) > 0 Then
-                ResolveAccount = AccountValue(i, AC_NAME)
-                Exit Function
+                If Len(hint) > bestHintLength Then
+                    bestHintLength = Len(hint)
+                    bestHintAccount = AccountValue(i, AC_NAME)
+                    bestHintTied = False
+                ElseIf Len(hint) = bestHintLength And _
+                       StrComp(bestHintAccount, AccountValue(i, AC_NAME), _
+                               vbTextCompare) <> 0 Then
+                    bestHintTied = True
+                End If
             End If
         End If
     Next i
+    ' A more specific snippet ("rbc-visa") wins over a broad one ("rbc").
+    ' Equal best matches are ambiguous and fall through to the account picker.
+    If bestHintLength > 0 And Not bestHintTied Then
+        ResolveAccount = bestHintAccount
+        Exit Function
+    End If
 
     ' The format settles it only when exactly one account uses it.
     For i = 1 To modUtil.BodyRows(lo)
@@ -197,8 +212,27 @@ Public Sub AddAccount(ByVal accountName As String, ByVal institution As String, 
     lo.DataBodyRange.Cells(rowIndex, modUtil.ColumnIndex(lo, AC_TYPE)).Value = accountType
     lo.DataBodyRange.Cells(rowIndex, modUtil.ColumnIndex(lo, AC_OWNER)).Value = owner
     lo.DataBodyRange.Cells(rowIndex, modUtil.ColumnIndex(lo, AC_FORMAT)).Value = bankFormat
-    lo.DataBodyRange.Cells(rowIndex, modUtil.ColumnIndex(lo, AC_INCLUDE)).Value = "Yes"
 End Sub
+
+' The setup wizard ships with example accounts so every report has context,
+' but a user who accepts "start fresh" needs a genuinely clean account list.
+' Only rows still marked as samples are cleared; anything the user added or
+' renamed and re-noted is preserved.
+Public Function ClearSampleAccounts() As Long
+    Dim lo As ListObject
+    Dim i As Long
+    Dim notesColumn As Long
+
+    Set lo = AccountsTable()
+    notesColumn = modUtil.ColumnIndex(lo, AC_NOTES)
+    For i = 1 To modUtil.BodyRows(lo)
+        If StrComp(modUtil.NzStr(lo.DataBodyRange.Cells(i, notesColumn).Value), _
+                   "Sample account", vbTextCompare) = 0 Then
+            lo.DataBodyRange.Rows(i).ClearContents
+            ClearSampleAccounts = ClearSampleAccounts + 1
+        End If
+    Next i
+End Function
 
 Private Function FirstEmptyRow(ByVal lo As ListObject) As Long
     Dim i As Long

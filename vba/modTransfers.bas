@@ -24,14 +24,27 @@ Public Sub DetectTransfers(Optional ByVal interactive As Boolean = True)
     On Error GoTo Fail
     Set lo = modUtil.TxnTable()
     rowCount = modUtil.BodyRows(lo)
+    If rowCount = 0 Then
+        If interactive Then MsgBox "Not enough transactions to compare.", _
+                                   vbInformation, APP_NAME
+        Exit Sub
+    End If
+
+    modUtil.FastMode True
+    ' Rebuild old automatic matches from scratch.  This matters after Undo
+    ' Import removes one side, and after the transfer-window setting changes.
+    If ResetPreviousMatches(lo, rowCount) > 0 Then
+        modRules.CategorizeUncategorized False
+    End If
+
     If rowCount < 2 Then
+        modUtil.FastMode False
         If interactive Then MsgBox "Not enough transactions to compare.", _
                                    vbInformation, APP_NAME
         Exit Sub
     End If
 
     windowDays = CLng(modUtil.NzNum(modUtil.Setting(NR_TRANSFER_DAYS), 4))
-    modUtil.FastMode True
 
     dates = modLedger.ReadColumn(lo, COL_DATE)
     accounts = modLedger.ReadColumn(lo, COL_ACCOUNT)
@@ -45,7 +58,7 @@ Public Sub DetectTransfers(Optional ByVal interactive As Boolean = True)
     ' Bucket every eligible row by the absolute amount so the search stays linear
     ' in practice instead of comparing every row with every other row.
     For i = 1 To rowCount
-        If Eligible(categories, amounts, i) Then
+        If Eligible(categories, amounts, tags, i) Then
             key = Format$(Abs(modUtil.NzNum(amounts(i, 1))), "0.00")
             modUtil.PutVal buckets, key, _
                 CStr(modUtil.GetVal(buckets, key, "")) & "," & i
@@ -54,7 +67,8 @@ Public Sub DetectTransfers(Optional ByVal interactive As Boolean = True)
 
     For i = 1 To rowCount
         If Not matched(i) Then
-            If Eligible(categories, amounts, i) And modUtil.NzNum(amounts(i, 1)) < 0 Then
+            If Eligible(categories, amounts, tags, i) And _
+               modUtil.NzNum(amounts(i, 1)) < 0 Then
                 key = Format$(Abs(modUtil.NzNum(amounts(i, 1))), "0.00")
                 candidates = Split(CStr(modUtil.GetVal(buckets, key, "")), ",")
                 For k = LBound(candidates) To UBound(candidates)
@@ -104,12 +118,41 @@ Fail:
     modUtil.ReportError "DetectTransfers"
 End Sub
 
+' Clears only categories this macro assigned.  Manual transfer categories are
+' deliberate and remain untouched; direct card-payment rules are restored by
+' CategorizeUncategorized before matching starts again.
+Private Function ResetPreviousMatches(ByVal lo As ListObject, _
+                                      ByVal rowCount As Long) As Long
+    Dim categories As Variant
+    Dim tags As Variant
+    Dim i As Long
+    Dim reset As Long
+
+    categories = modLedger.ReadColumn(lo, COL_CATEGORY)
+    tags = modLedger.ReadColumn(lo, COL_TAGGEDBY)
+    For i = 1 To rowCount
+        If StrComp(modUtil.NzStr(tags(i, 1)), TAG_TRANSFER, vbTextCompare) = 0 Then
+            categories(i, 1) = CAT_UNCATEGORIZED
+            tags(i, 1) = TAG_IMPORT
+            reset = reset + 1
+        End If
+    Next i
+    If reset > 0 Then
+        modLedger.WriteColumn lo, 1, rowCount, COL_CATEGORY, categories
+        modLedger.WriteColumn lo, 1, rowCount, COL_TAGGEDBY, tags
+    End If
+    ResetPreviousMatches = reset
+End Function
+
 ' Only rows that nobody has deliberately categorised are candidates.
 Private Function Eligible(ByRef categories As Variant, ByRef amounts As Variant, _
-                          ByVal rowIndex As Long) As Boolean
+                          ByRef tags As Variant, ByVal rowIndex As Long) As Boolean
     Dim category As String
     If Len(modUtil.NzStr(amounts(rowIndex, 1))) = 0 Then Exit Function
     If modUtil.NzNum(amounts(rowIndex, 1)) = 0 Then Exit Function
+    If StrComp(modUtil.NzStr(tags(rowIndex, 1)), TAG_MANUAL, vbTextCompare) = 0 Then
+        Exit Function
+    End If
     category = modUtil.NzStr(categories(rowIndex, 1))
     Select Case True
         Case Len(category) = 0

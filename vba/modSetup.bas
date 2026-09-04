@@ -55,10 +55,14 @@ Public Sub RunSetupWizard()
     modUI.EnsureButtons
 
     If HasSampleData() Then
-        startFresh = MsgBox("This workbook still contains the sample transactions." & _
-            vbCrLf & vbCrLf & "Delete them and start with an empty ledger?", _
+        startFresh = MsgBox("This workbook still contains the sample transactions " & _
+            "and sample account rows." & vbCrLf & vbCrLf & _
+            "Delete both and start with your own finances?", _
             vbYesNo + vbQuestion, APP_NAME)
-        If startFresh = vbYes Then ClearAllTransactions False
+        If startFresh = vbYes Then
+            ClearAllTransactions False
+            modAccounts.ClearSampleAccounts
+        End If
     End If
 
     modUtil.Sh(SH_ACCOUNTS).Activate
@@ -122,23 +126,14 @@ Public Sub ClearAllTransactions(Optional ByVal confirm As Boolean = True)
 
     modUtil.FastMode True
     Set lo = modUtil.TxnTable()
-    If modUtil.BodyRows(lo) > 1 Then
-        lo.DataBodyRange.Offset(1, 0).Resize(modUtil.BodyRows(lo) - 1).Rows.Delete
-    End If
-    If modUtil.BodyRows(lo) = 1 Then
-        lo.DataBodyRange.Rows(1).ClearContents
-        modLedger.ApplyTemplates lo, 1, 1
-    End If
+    modLedger.ClearRowsKeepOne lo
+    modLedger.ApplyTemplates lo, 1, 1
     modLedger.SyncPrintArea lo
 
     On Error Resume Next
     Set logTable = modUtil.Tbl(SH_LOG, TBL_LOG)
     If Not logTable Is Nothing Then
-        If modUtil.BodyRows(logTable) > 1 Then
-            logTable.DataBodyRange.Offset(1, 0) _
-                .Resize(modUtil.BodyRows(logTable) - 1).Rows.Delete
-        End If
-        logTable.DataBodyRange.Rows(1).ClearContents
+        modLedger.ClearRowsKeepOne logTable
     End If
 
     Set rules = modRules.RulesTable()

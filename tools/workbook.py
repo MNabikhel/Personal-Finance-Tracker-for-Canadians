@@ -403,10 +403,14 @@ DASH_KPIS_RIGHT = [
     ("Average spend per day", 'IFERROR(C10/DAY(EOMONTH(DATE(VALUE(LEFT(ReportMonth,4)),VALUE(RIGHT(ReportMonth,2)),1),0)),"")', MONEY),
     ("Transactions this month", "COUNTIFS(tblTxn[Month],ReportMonth)", "#,##0"),
     # Blank until the user actually sets budgets, rather than claiming they are
-    # thousands of dollars over a budget of zero.
+    # thousands of dollars over a budget of zero. Category budgets are
+    # household amounts, so comparing one person's share with all of them
+    # would be misleading.
     ("Left in monthly budget",
-     'IF(SUM(tblCategories[Monthly Budget])=0,"",'
-     'SUM(tblCategories[Monthly Budget])-C10)', MONEY),
+     'IF(OR(ReportView<>"Household",'
+     'SUMIFS(Budget!$E$6:$E$125,Budget!$D$6:$D$125,"Expense")=0),"",'
+     'SUMIFS(Budget!$G$6:$G$125,Budget!$D$6:$D$125,"Expense"))',
+     MONEY),
 ]
 
 
@@ -651,37 +655,37 @@ def build_accounts(wb: Workbook):
     ws = wb.create_sheet(SH_ACCOUNTS)
     ws.sheet_view.showGridLines = False
     widths(ws, {"A": 2, "B": 26, "C": 20, "D": 14, "E": 14, "F": 28, "G": 24,
-                "H": 18, "I": 30})
+                "H": 30})
 
     put(ws, "B1", "Accounts", TITLE_FONT)
     put(ws, "B2", "One row per bank or card account. \"File Name Contains\" lets the "
                   "importer recognise a download without asking.", SUB_FONT)
 
     headers = ["Account", "Institution", "Type", "Owner", "Bank Format",
-               "File Name Contains", "Include in Household", "Notes"]
+               "File Name Contains", "Notes"]
     table_header(ws, 4, headers)
 
     rows = [
         (sample.ACCOUNT_ALEX, "RBC Royal Bank", "Chequing", sample.PERSON_A,
-         "RBC Chequing/Savings/Card", "rbc-chequing-alex", "Yes", "Sample account"),
+         "RBC Chequing/Savings/Card", "rbc-chequing-alex", "Sample account"),
         (sample.ACCOUNT_SAM, "Tangerine", "Chequing", sample.PERSON_B,
-         "Tangerine", "tangerine-chequing-sam", "Yes", "Sample account"),
+         "Tangerine", "tangerine-chequing-sam", "Sample account"),
         (sample.ACCOUNT_JOINT, "BMO", "Chequing", "Joint", "BMO",
-         "bmo-joint-chequing", "Yes", "Sample account"),
+         "bmo-joint-chequing", "Sample account"),
         (sample.ACCOUNT_CARD, "American Express", "Credit Card", "Joint",
-         "Amex Canada", "amex-cobalt-joint", "Yes", "Sample account"),
-        ("", "", "", "", "", "", "", ""),
-        ("", "", "", "", "", "", "", ""),
-        ("", "", "", "", "", "", "", ""),
-        ("", "", "", "", "", "", "", ""),
+         "Amex Canada", "amex-cobalt-joint", "Sample account"),
+        ("", "", "", "", "", "", ""),
+        ("", "", "", "", "", "", ""),
+        ("", "", "", "", "", "", ""),
+        ("", "", "", "", "", "", ""),
     ]
     for offset, row_values in enumerate(rows):
         for index, value in enumerate(row_values):
             ws.cell(row=5 + offset, column=2 + index, value=value or None)
 
-    add_table(ws, "tblAccounts", f"B4:I{4 + len(rows)}")
+    add_table(ws, "tblAccounts", f"B4:H{4 + len(rows)}")
     ws.freeze_panes = "B5"
-    printing(ws, f"B1:I{4 + len(rows)}", landscape=True, titles="4:4")
+    printing(ws, f"B1:H{4 + len(rows)}", landscape=True, titles="4:4")
 
 
 def build_categories(wb: Workbook):
@@ -925,7 +929,8 @@ def build_budget(wb: Workbook):
                   "page compares it with what actually happened in the report month "
                   "chosen on the Dashboard. Income and spending are both shown as "
                   "positive numbers, and a negative Difference always means the month "
-                  "went the wrong way.", SUB_FONT)
+                  "went the wrong way. In a personal View, actuals still follow that "
+                  "person but household budget comparisons stay blank.", SUB_FONT)
     put(ws, "B3", "Month shown", BOLD)
     put(ws, "C3", "=ReportMonth", Font(bold=True, color=ACCENT), align="center")
 
@@ -949,7 +954,8 @@ def build_budget(wb: Workbook):
         # same footing so "more than budgeted" always reads the same way.
         put(ws, f"K{row}", f'=IF($D{row}="Income",1,-1)')
         put(ws, f"E{row}",
-            f'=IF($B{row}="","",IFERROR(INDEX(tblCategories[Monthly Budget],'
+            f'=IF(OR($B{row}="",ReportView<>"Household"),"",'
+            f'IFERROR(INDEX(tblCategories[Monthly Budget],'
             f'MATCH($B{row},tblCategories[Category],0)),0))', fmt=MONEY)
         put(ws, f"F{row}",
             f'=IF($B{row}="","",SUMIFS(tblTxn[View Amount],tblTxn[Month],'
@@ -1380,7 +1386,7 @@ HELP_SECTIONS = [
         "and tick Unblock first.",
         "2. Press \"Setup wizard\" on the Dashboard: it asks who the workbook is for, "
         "your names, how joint costs are split and your province, then offers to "
-        "delete the sample data.",
+        "delete the sample transactions and sample account rows.",
         "3. List your accounts on the Accounts sheet - one row per bank or card "
         "account. Fill in \"File Name Contains\" with a snippet of the file name your "
         "bank produces so imports find the right account by themselves.",
@@ -1571,7 +1577,6 @@ def add_validation(wb: Workbook):
     validate(ws, ["D5:D200"], "=AccountTypeList")
     validate(ws, ["E5:E200"], "=OwnerList")
     validate(ws, ["F5:F200"], "=FormatList")
-    validate(ws, ["H5:H200"], "=YesNoList")
 
     ws = wb[SH_CATEGORIES]
     last_category = 4 + len(data.CATEGORIES) + 100

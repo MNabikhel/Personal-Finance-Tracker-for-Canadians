@@ -42,7 +42,7 @@ through Excel's own PDF reader, and go through the same preview and the same
 duplicate check — see [Importing statements](#importing-statements) for what
 that needs and where it stops.
 
-**Sorts it out for you.** 194 seeded rules map merchant names onto 92
+**Sorts it out for you.** 196 seeded rules map merchant names onto 92
 categories in 14 groups. Anything the rules cannot place is left as
 `Uncategorized` and highlighted; select a row, press *Teach a rule*, and every
 future transaction like it is categorised automatically.
@@ -91,7 +91,8 @@ it. The setup wizard offers to delete it when you are ready for your own.
    sample data, and every button works against it.
 4. **Press *Setup wizard*.** It asks whether the workbook is for one person or
    two, your names, how you split shared costs, and your province — then offers
-   to clear the sample transactions.
+   to clear the sample transactions and sample account rows so your first
+   import cannot be routed into an example account.
 5. **List your accounts** on the *Accounts* sheet, one row per bank or card
    account. Put a snippet of the file name your bank produces in *File Name
    Contains* and imports will find the right account by themselves.

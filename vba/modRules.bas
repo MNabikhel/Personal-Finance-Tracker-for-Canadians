@@ -242,6 +242,16 @@ Private Sub ApplyRules(ByVal includeTagged As Boolean, ByVal interactive As Bool
 
     For i = 1 To rowCount
         If Len(modUtil.NzStr(amounts(i, 1))) > 0 Then
+            ' "Apply rules to all" means the current rules are authoritative:
+            ' a rule that was removed or disabled must leave the row needing a
+            ' category, not silently preserve the old answer.  Manual choices
+            ' remain above the rules.
+            If includeTagged And _
+               StrComp(modUtil.NzStr(tags(i, 1)), TAG_MANUAL, vbTextCompare) <> 0 Then
+                categories(i, 1) = CAT_UNCATEGORIZED
+                tags(i, 1) = TAG_IMPORT
+                changed = True
+            End If
             If Retaggable(modUtil.NzStr(categories(i, 1)), _
                           modUtil.NzStr(tags(i, 1)), includeTagged) Then
                 Set rule = RuleFor(rules, modUtil.NzStr(merchants(i, 1)), _
@@ -277,6 +287,10 @@ Private Sub ApplyRules(ByVal includeTagged As Boolean, ByVal interactive As Bool
         SaveHits hits
     End If
     modUtil.FastMode False
+
+    ' The all-rules pass deliberately reset prior automatic transfer tags.
+    ' Put valid pairs back before reporting how many rows still need attention.
+    If includeTagged Then modTransfers.DetectTransfers False
 
     If interactive Then
         MsgBox matched & " transaction(s) were categorised." & vbCrLf & _
