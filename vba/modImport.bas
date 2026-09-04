@@ -154,6 +154,10 @@ Private Function ImportOneFile(ByVal path As String, ByVal batchId As String, _
         Exit Function
     End If
     Set profile = modProfiles.DetectProfile(rows)
+    If profile Is Nothing Then
+        Set profile = modProfiles.FindProfileByName( _
+            modAccounts.FormatForFileName(fileName))
+    End If
 
     Do
         If profile Is Nothing Then
