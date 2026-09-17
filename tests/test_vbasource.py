@@ -388,11 +388,11 @@ class WorkflowInvariantTests(unittest.TestCase):
         source = MODULES["ThisWorkbook"].code
         self.assertNotIn("touched.Cells.Count >", source)
 
-    def test_workbook_change_event_uses_excels_exact_range_type_and_recovers(self):
+    def test_workbook_change_event_uses_excels_canonical_signature_and_recovers(self):
         source = MODULES["ThisWorkbook"].text
         self.assertIn(
             "Private Sub Workbook_SheetChange(ByVal Sh As Object, "
-            "ByVal Target As Excel.Range)",
+            "ByVal Target As Range)",
             source,
         )
         code = MODULES["ThisWorkbook"].code

@@ -26,7 +26,7 @@ from openpyxl.workbook.defined_name import DefinedName
 from . import data, sample
 
 APP_NAME = "Canadian Finance Tracker"       # matches modConst.APP_NAME
-APP_VERSION = "1.1.2"                       # matches modConst.APP_VERSION
+APP_VERSION = "1.1.3"                       # matches modConst.APP_VERSION
 
 # --- Look and feel ----------------------------------------------------------
 
